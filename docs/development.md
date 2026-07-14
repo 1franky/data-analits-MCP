@@ -2,15 +2,16 @@
 
 ## Preparación
 
-La versión de referencia es Python 3.12. El camino recomendado es usar el target Docker `test`, que
-evita depender de la versión de Python instalada en el anfitrión y reproduce Linux ARM64/AMD64.
+Python 3.12 es la referencia. El target Docker `test` reproduce el entorno Linux del runtime y evita
+depender de la versión instalada en el anfitrión.
 
 ```bash
 cp .env.example .env
+# Sustituye los marcadores locales de contraseña.
 docker network inspect ai-platform >/dev/null 2>&1 || docker network create ai-platform
 ```
 
-`.env` está ignorado por Git. No añadas secretos a `.env.example`.
+`.env` está ignorado por Git. Nunca añadas secretos a `.env.example` o `connections.yaml`.
 
 ## Instalación local opcional
 
@@ -18,76 +19,77 @@ docker network inspect ai-platform >/dev/null 2>&1 || docker network create ai-p
 python3.12 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e '.[dev]'
+POSTGRES_DEMO_PASSWORD='valor-local' uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Arranque local:
+El arranque local necesita que `connections.yaml` pueda resolverse y que PostgreSQL sea alcanzable
+por el host configurado. Para el flujo completo se recomienda Compose.
 
-```bash
-uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
-```
-
-## Validaciones
-
-Construye una vez el entorno de calidad:
+## Validaciones unitarias y estáticas
 
 ```bash
 docker build --target test -t data-platform-mcp:test .
-```
-
-Ejecuta cada control de forma independiente:
-
-```bash
-docker run --rm data-platform-mcp:test pytest
+docker run --rm data-platform-mcp:test pytest -m 'not integration'
 docker run --rm data-platform-mcp:test ruff check app tests
 docker run --rm data-platform-mcp:test ruff format --check app tests
 docker run --rm data-platform-mcp:test mypy app tests
-docker compose config --quiet
-docker compose build data-platform-mcp
+docker compose --env-file .env.example config --quiet
+docker compose --env-file .env.example build data-platform-mcp
+docker compose --env-file .env.example build postgres-lab
 ```
 
-Ninguna validación debe marcarse como aprobada si el comando no se ejecutó. Los resultados reales
-del último cierre de sprint se registran en `TASKS.md`.
+## Pruebas de integración PostgreSQL
 
-## Prueba del servicio
+Crea el laboratorio desde cero para que todos los scripts de inicialización se apliquen:
 
 ```bash
-docker compose up -d --build
-docker compose ps
-curl --fail http://127.0.0.1:8000/health
-docker compose logs data-platform-mcp
-docker compose down
+docker compose --env-file .env.example down --volumes --remove-orphans
+docker compose --env-file .env.example up -d --build
+docker compose --env-file .env.example ps
 ```
 
-Desde otro contenedor conectado a `ai-platform`, la URL MCP es:
+Ejecuta la suite desde la imagen de pruebas en la red compartida:
+
+```bash
+docker run --rm \
+  --network ai-platform \
+  -e RUN_POSTGRES_INTEGRATION=1 \
+  -e POSTGRES_DEMO_PASSWORD=local-only-readonly-change-me \
+  data-platform-mcp:test pytest -m integration
+```
+
+La suite comprueba conectividad, schemas, tablas, columnas, PK, FK y que `mcp_readonly` no puede
+insertar. El valor mostrado coincide con el marcador de `.env.example`; usa el secreto real de tu
+`.env` si lo cambiaste.
+
+## Prueba manual del servicio
+
+```bash
+curl --fail http://127.0.0.1:8000/health
+docker compose --env-file .env.example logs data-platform-mcp postgres-lab
+```
+
+Desde Open WebUI u otro contenedor conectado a `ai-platform`:
 
 ```text
 http://data-platform-mcp:8000/mcp
 ```
 
-No uses `localhost` desde Open WebUI: dentro de su contenedor, `localhost` apunta a Open WebUI, no
-al servicio MCP.
+No uses `localhost` desde Open WebUI: apunta al propio contenedor de Open WebUI.
 
 ## Convenciones
 
-- Python objetivo: 3.12; usa anotaciones de tipo para toda función pública.
+- Anotaciones de tipo en toda función y mypy estricto sobre `app` y `tests`.
 - Ruff es la única herramienta de lint y formato.
-- mypy se ejecuta en modo estricto sobre `app` y `tests`.
-- Las pruebas unitarias no deben depender de servicios externos.
-- Una función MCP debe probarse a través del cliente en memoria, además de probar su lógica cuando
-  corresponda.
-- No agregues una capa futura hasta que exista una historia con comportamiento y pruebas reales.
-- No mezcles generación de consultas con ejecución.
-- No registres secretos, cadenas de conexión ni datos sensibles.
-
-## Dependencias
-
-Las dependencias de runtime y desarrollo se declaran en `pyproject.toml` con rangos controlados. No
-se aceptan imágenes Docker con etiqueta `latest`. Una actualización de FastMCP debe volver a probar
-el lifespan ASGI, el listado de herramientas y una llamada real a `hello_world`.
+- Pruebas unitarias sin servicios externos; integración marcada y opt-in.
+- Builders de adaptadores registrados por tipo, sin cadenas `if/elif` centrales.
+- Errores en fronteras de transporte normalizados y sin detalles sensibles.
+- Consultas de catálogos parametrizadas; nunca interpolar nombres recibidos.
+- No agregar código de sprints futuros.
 
 ## Flujo Git
 
-El trabajo de Sprint 0 se realiza en `feature/sprint-0-bootstrap`. Antes de solicitar revisión:
+Sprint 1 se desarrolla en `feature/sprint-1-postgresql`. Antes de solicitar revisión:
 
 ```bash
 git status --short
@@ -96,4 +98,4 @@ git diff --stat
 git diff
 ```
 
-No se crea ningún commit hasta recibir aprobación explícita.
+No se crea un commit hasta recibir aprobación explícita.

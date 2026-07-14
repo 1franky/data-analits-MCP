@@ -1,6 +1,6 @@
 services:
   data-platform-mcp:
-    image: data-platform-mcp:${IMAGE_TAG:-0.1.0}
+    image: data-platform-mcp:${IMAGE_TAG:-0.2.0}
     build:
       context: .
       dockerfile: Dockerfile
@@ -16,6 +16,11 @@ services:
       - "8000"
       - --log-level
       - ${LOG_LEVEL:-info}
+    environment:
+      CONNECTIONS_FILE: /app/connections.yaml
+      POSTGRES_DEMO_PASSWORD: ${POSTGRES_DEMO_PASSWORD:?Copy .env.example to .env and set POSTGRES_DEMO_PASSWORD}
+    volumes:
+      - ./connections.yaml:/app/connections.yaml:ro
     ports:
       - "${MCP_BIND_ADDRESS:-127.0.0.1}:${MCP_PORT:-8000}:8000"
     expose:
@@ -40,6 +45,36 @@ services:
       timeout: 3s
       start_period: 5s
       retries: 3
+    depends_on:
+      postgres-lab:
+        condition: service_healthy
+    networks:
+      - ai-platform
+
+  postgres-lab:
+    image: data-platform-postgres-lab:${POSTGRES_IMAGE_TAG:-17.10}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: postgres-lab
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_LAB_ADMIN_PASSWORD:?Copy .env.example to .env and set POSTGRES_LAB_ADMIN_PASSWORD}
+      POSTGRES_DB: demo
+      POSTGRES_DEMO_PASSWORD: ${POSTGRES_DEMO_PASSWORD:?Copy .env.example to .env and set POSTGRES_DEMO_PASSWORD}
+    ports:
+      - "${POSTGRES_LAB_BIND_ADDRESS:-127.0.0.1}:${POSTGRES_LAB_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U postgres -d demo
+      interval: 10s
+      timeout: 5s
+      start_period: 10s
+      retries: 10
     networks:
       - ai-platform
 
@@ -47,3 +82,6 @@ networks:
   ai-platform:
     name: ${AI_PLATFORM_NETWORK:-ai-platform}
     external: true
+
+volumes:
+  postgres-data:

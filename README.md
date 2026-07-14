@@ -1,25 +1,28 @@
 # Data Platform MCP
 
-Data Platform MCP será una plataforma independiente del proveedor de LLM para explorar y
-consultar fuentes de datos desde clientes compatibles con Model Context Protocol (MCP), incluido
-Open WebUI. El objetivo final es ofrecer metadatos, generación de consultas y ejecución de solo
-lectura con validación, límites, auditoría y documentación recuperada mediante RAG.
+Data Platform MCP es un servicio independiente del proveedor de LLM para explorar fuentes de datos
+desde clientes compatibles con Model Context Protocol (MCP), incluido Open WebUI. El proyecto se
+construye por sprints y actualmente implementa el **Sprint 1**: configuración de conexiones por
+YAML, herramientas de descubrimiento/conectividad y un adaptador PostgreSQL de metadatos.
 
-Este repositorio contiene **exclusivamente el Sprint 0**: bootstrap técnico, documentación,
-health check y una herramienta MCP de conectividad. Aún no se conecta a bases de datos, no valida
-ni ejecuta SQL y no implementa RAG.
+No existe todavía ejecución de SQL de usuario, catálogo persistente, generación de consultas, RAG
+ni auditoría. El adaptador solo ejecuta consultas constantes o de catálogos internos controladas por
+la aplicación.
 
 ## Arquitectura actual
 
-Un único proceso ASGI ejecutado por Uvicorn aloja dos interfaces:
+Un proceso ASGI ejecutado por Uvicorn expone:
 
 - `GET /health`: liveness administrativo de FastAPI.
-- `/mcp`: transporte MCP Streamable HTTP de FastMCP con la herramienta `hello_world`.
+- `/mcp`: transporte MCP Streamable HTTP de FastMCP.
+- `hello_world`: herramienta de verificación básica.
+- `list_connections`: declaraciones y capacidades sin host, usuario ni secretos.
+- `test_connection`: prueba acotada de conectividad con latencia y error normalizado.
 
-El contenedor `data-platform-mcp` se une a la red Docker externa `ai-platform`. Open WebUI puede
-permanecer en otro proyecto Compose y alcanzar el servicio por el DNS interno
-`data-platform-mcp:8000`. La arquitectura objetivo y sus límites están descritos en
-[`docs/architecture.md`](docs/architecture.md).
+La configuración pasa por Pydantic, el servicio resuelve secretos desde el entorno y una fábrica por
+registro crea el adaptador. `PostgresAdapter` puede probar conectividad y obtener schemas, tablas,
+columnas, claves primarias y foráneas; esas operaciones de metadata todavía no se exponen como tools.
+Consulta [la arquitectura](docs/architecture.md) para los límites de las capas.
 
 ## Requisitos
 
@@ -28,13 +31,15 @@ permanecer en otro proyecto Compose y alcanzar el servicio por el DNS interno
 - Red Docker externa `ai-platform` creada previamente.
 - Para desarrollo sin Docker: Python 3.12 y un entorno virtual.
 
-La imagen base `python:3.12.13-slim-bookworm` tiene variante Linux ARM64 y es adecuada para una
-instancia Oracle Cloud Free Tier ARM64. No se utilizan rutas absolutas del anfitrión.
+Las imágenes `python:3.12.13-slim-bookworm` y `postgres:17.10-bookworm` disponen de variantes
+Linux ARM64. El proyecto no usa rutas absolutas del anfitrión y es desplegable en Oracle Cloud Free
+Tier ARM64, sujeto al dimensionamiento y monitoreo propios del entorno.
 
 ## Inicio rápido con Docker
 
 ```bash
 cp .env.example .env
+# Cambia ambas contraseñas de laboratorio dentro de .env.
 docker network inspect ai-platform >/dev/null 2>&1 || docker network create ai-platform
 docker compose up -d --build
 docker compose ps
@@ -47,30 +52,84 @@ Respuesta esperada:
 {
   "status": "ok",
   "service": "data-platform-mcp",
-  "version": "0.1.0"
+  "version": "0.2.0"
 }
 ```
 
-El puerto se publica en `127.0.0.1:8000` por defecto, no en todas las interfaces. Los contenedores
-de la red compartida usan `http://data-platform-mcp:8000`; un cliente MCP debe apuntar a
-`http://data-platform-mcp:8000/mcp`.
+El puerto MCP se publica en `127.0.0.1:8000` por defecto y PostgreSQL en
+`127.0.0.1:5432`. Los contenedores de `ai-platform` usan estas URLs internas:
 
-Para detener el servicio:
-
-```bash
-docker compose down
+```text
+MCP:        http://data-platform-mcp:8000/mcp
+PostgreSQL: postgres-lab:5432
 ```
 
-## Desarrollo local
+Open WebUI puede permanecer en otro proyecto Compose: solo necesita compartir `ai-platform`.
+
+Para eliminar también los datos desechables del laboratorio:
+
+```bash
+docker compose down --volumes
+```
+
+## Configuración de conexiones
+
+`connections.yaml` contiene declaraciones sin contraseña. Cada `password_env` indica qué variable
+de entorno debe proporcionar el secreto al proceso:
+
+```yaml
+connections:
+  - id: postgres-demo
+    name: PostgreSQL Demo
+    type: postgres
+    host: postgres-lab
+    port: 5432
+    database: demo
+    username: mcp_readonly
+    password_env: POSTGRES_DEMO_PASSWORD
+    readonly: true
+    enabled: true
+    connect_timeout_seconds: 10
+    query_timeout_seconds: 30
+    max_rows: 500
+    options:
+      application_name: data-platform-mcp
+      sslmode: disable
+```
+
+El archivo se monta como solo lectura, por lo que puede cambiarse sin reconstruir la imagen. El
+proceso debe reiniciarse para cargar la nueva configuración. IDs duplicados, valores fuera de rango,
+opciones reservadas, conexiones habilitadas sin modo readonly, motores sin adaptador o secretos
+ausentes detienen el arranque con un error claro. La referencia completa está en
+[conexiones](docs/connections.md).
+
+Variables Compose incluidas en `.env.example`:
+
+| Variable | Predeterminado de ejemplo | Uso |
+|---|---:|---|
+| `AI_PLATFORM_NETWORK` | `ai-platform` | Red externa compartida con Open WebUI. |
+| `MCP_BIND_ADDRESS` | `127.0.0.1` | Interfaz local del MCP/API. |
+| `MCP_PORT` | `8000` | Puerto local del MCP/API. |
+| `LOG_LEVEL` | `info` | Nivel de log de Uvicorn. |
+| `IMAGE_TAG` | `0.2.0` | Etiqueta local de la imagen. |
+| `POSTGRES_IMAGE_TAG` | `17.10` | Etiqueta local del laboratorio PostgreSQL. |
+| `POSTGRES_LAB_ADMIN_PASSWORD` | valor local no secreto | Administrador del laboratorio. |
+| `POSTGRES_DEMO_PASSWORD` | valor local no secreto | Rol `mcp_readonly` y adaptador. |
+| `POSTGRES_LAB_BIND_ADDRESS` | `127.0.0.1` | Interfaz local de PostgreSQL. |
+| `POSTGRES_LAB_PORT` | `5432` | Puerto local de PostgreSQL. |
+
+Los valores de `.env.example` son marcadores para desarrollo local, no credenciales aptas para
+producción.
+
+## Desarrollo y validación
 
 ```bash
 python3.12 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e '.[dev]'
-uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Validaciones reproducibles en Python 3.12 mediante Docker:
+Validaciones reproducibles mediante Docker:
 
 ```bash
 docker build --target test -t data-platform-mcp:test .
@@ -78,75 +137,39 @@ docker run --rm data-platform-mcp:test pytest
 docker run --rm data-platform-mcp:test ruff check app tests
 docker run --rm data-platform-mcp:test ruff format --check app tests
 docker run --rm data-platform-mcp:test mypy app tests
-docker compose config --quiet
-docker compose build data-platform-mcp
+docker compose --env-file .env.example config --quiet
+docker compose --env-file .env.example build data-platform-mcp
 ```
 
-Consulta [`docs/development.md`](docs/development.md) para el flujo completo.
-
-## Configuración
-
-`.env.example` contiene únicamente opciones no sensibles:
-
-| Variable | Predeterminado | Uso |
-|---|---:|---|
-| `AI_PLATFORM_NETWORK` | `ai-platform` | Red externa compartida con Open WebUI. |
-| `MCP_BIND_ADDRESS` | `127.0.0.1` | Interfaz del anfitrión donde se publica el puerto. |
-| `MCP_PORT` | `8000` | Puerto local publicado. |
-| `LOG_LEVEL` | `info` | Nivel de log de Uvicorn. |
-| `IMAGE_TAG` | `0.1.0` | Etiqueta local de la imagen construida. |
-
-No agregues secretos a `.env.example`. La configuración de conexiones y secretos pertenece al
-Sprint 1.
-
-## Ejemplo MCP
-
-La herramienta disponible en Sprint 0 es:
-
-```text
-hello_world(name: str = "world")
-```
-
-Para `name="Open WebUI"` devuelve:
-
-```json
-{"message": "Hello, Open WebUI!"}
-```
-
-La prueba automatizada usa el cliente en memoria de FastMCP y verifica tanto el registro como la
-invocación real de la herramienta.
+Las pruebas de integración requieren el laboratorio y se habilitan explícitamente; consulta
+[desarrollo](docs/development.md).
 
 ## Seguridad
 
-- El proceso del contenedor se ejecuta con UID/GID no privilegiado `10001`.
-- El filesystem raíz es de solo lectura en Compose; `/tmp` es un `tmpfs` limitado.
-- Se eliminan todas las capabilities Linux y se activa `no-new-privileges`.
-- La publicación HTTP escucha solo en loopback por defecto.
-- No existen credenciales, conexiones de datos ni rutas persistentes en Sprint 0.
-- `hello_world` no accede a red, archivos ni procesos externos.
+- El MCP utiliza `mcp_readonly`, nunca el superusuario del laboratorio.
+- El rol tiene `SELECT` y `default_transaction_read_only=on`; no recibe escritura ni DDL.
+- El adaptador fuerza además sesiones de solo lectura.
+- Las consultas de metadata están definidas por la aplicación y sus filtros usan parámetros.
+- Contraseñas y cadenas completas no aparecen en herramientas ni errores normalizados.
+- El runtime usa UID/GID `10001`, raíz de solo lectura, sin capabilities y sin privilegios nuevos.
+- Los puertos se publican solo en loopback por defecto.
 
-La red `ai-platform` debe tratarse como una frontera de confianza operativa. Autenticación,
-autorización, auditoría y políticas SQL son trabajo de sprints posteriores; no debe exponerse este
-bootstrap directamente a Internet.
+Esta defensa en profundidad no sustituye autenticación MCP ni segmentación de red. No expongas el
+servicio directamente a Internet. Consulta [seguridad](docs/security.md).
 
 ## Estado de motores
 
 | Motor | Estado |
 |---|---|
-| PostgreSQL | Planificado para Sprint 1; no implementado. |
-| SQL Server | Planificado para Sprint 9; no implementado. |
-| MariaDB/MySQL | Planificado para Sprint 9; no implementado. |
-| Informix | Planificado para Sprint 9; sujeto a disponibilidad de driver ARM64. |
-| MongoDB | Planificado para Sprint 9 con interfaz documental específica. |
-| Oracle | Extensión futura; no implementada. |
+| PostgreSQL | Sprint 1: conectividad y metadata implementadas; ejecución SQL de usuario no disponible. |
+| SQL Server | Planificado para Sprint 9. |
+| MariaDB/MySQL | Planificado para Sprint 9. |
+| Informix | Planificado para Sprint 9; driver ARM64 por validar. |
+| MongoDB | Planificado para Sprint 9 con interfaz documental. |
+| Oracle | Extensión futura. |
 
 ## Roadmap
 
-El plan completo se mantiene en [`TASKS.md`](TASKS.md). Próximos hitos principales:
-
-1. Sprint 1: configuración de conexiones y adaptador PostgreSQL de solo lectura.
-2. Sprint 2: catálogo y caché de schemas.
-3. Sprint 3: validación y ejecución SQL segura.
-4. Sprints 4–10: contratos MCP, generación, objetos, RAG, Open WebUI, más motores y hardening.
-
-No se iniciará Sprint 1 hasta que Sprint 0 sea revisado y aprobado.
+El plan se mantiene en [TASKS.md](TASKS.md). El siguiente hito, pendiente de aprobación del Sprint
+1, es Sprint 2: catálogo y caché de schemas. Después siguen validación/ejecución SQL segura,
+contratos MCP de metadata, generación, objetos, RAG, Open WebUI, motores adicionales y hardening.

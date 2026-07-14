@@ -16,12 +16,21 @@ Todos los cambios relevantes de este proyecto se documentan en este archivo. El 
 - Imagen Docker multi-stage basada en `python:3.12.13-slim-bookworm` y usuario no-root.
 - Compose endurecido y conectado a la red externa `ai-platform`.
 - Documentación inicial, arquitectura, guía de desarrollo y plan completo de sprints.
+- Carga de `connections.yaml` validada por Pydantic y secretos resueltos desde el entorno.
+- Fábrica de adaptadores basada en registro y contrato SQL de metadata.
+- Adaptador PostgreSQL para conectividad, schemas, tablas, columnas, PK y FK.
+- Herramientas MCP `list_connections` y `test_connection` con respuestas no sensibles.
+- Laboratorio PostgreSQL 17 con esquema demo, datos y rol `mcp_readonly`.
+- Pruebas unitarias e integración opt-in para configuración, servicios, tools y PostgreSQL.
+- Documentación de conexiones, herramientas MCP y seguridad.
 
 ### Security
 
 - Publicación del puerto limitada a loopback por defecto.
 - Filesystem de contenedor de solo lectura, capabilities eliminadas y `no-new-privileges`.
 - Exclusión de `.env` y artefactos locales del contexto Git/Docker.
+- Sesiones PostgreSQL readonly, rol sin escritura/DDL y consultas de metadata parametrizadas.
+- Allowlist de opciones PostgreSQL y rechazo de campos sensibles dentro de `options`.
 
 ### Fixed
 
@@ -30,6 +39,5 @@ Todos los cambios relevantes de este proyecto se documentan en este archivo. El 
 
 ### Not implemented
 
-- Conexiones y laboratorio PostgreSQL (Sprint 1).
 - Catálogo, RAG, generación, validación o ejecución SQL.
 - Autenticación, auditoría y métricas operativas.

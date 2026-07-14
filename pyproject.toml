@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "data-platform-mcp"
-version = "0.1.0"
+version = "0.2.0"
 description = "MCP extensible para consultar plataformas de datos de forma segura."
 readme = "README.md"
 requires-python = ">=3.12,<3.15"
@@ -14,6 +14,9 @@ authors = [
 dependencies = [
   "fastapi>=0.139.0,<0.140.0",
   "fastmcp>=3.4.4,<3.5.0",
+  "psycopg[binary]>=3.3.4,<3.4.0",
+  "pydantic>=2.13.4,<3.0.0",
+  "PyYAML>=6.0.3,<7.0.0",
   "uvicorn>=0.51.0,<0.52.0",
 ]
 
@@ -24,6 +27,7 @@ dev = [
   "pytest>=9.1.1,<9.2.0",
   "pytest-asyncio>=1.0,<2.0",
   "ruff>=0.15.20,<0.16.0",
+  "types-PyYAML>=6.0.12.20260518,<6.1.0",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -32,6 +36,9 @@ packages = ["app"]
 [tool.pytest.ini_options]
 addopts = "-ra --strict-config --strict-markers"
 asyncio_mode = "auto"
+markers = [
+  "integration: requires the Docker PostgreSQL laboratory",
+]
 testpaths = ["tests"]
 
 [tool.ruff]
