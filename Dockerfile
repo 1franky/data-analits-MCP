@@ -18,6 +18,10 @@ RUN pip install --no-cache-dir ".[dev]"
 
 CMD ["pytest"]
 
+FROM postgres:17.10-bookworm AS postgres-lab
+
+COPY --chmod=0555 database/init/ /docker-entrypoint-initdb.d/
+
 FROM base AS runtime
 
 RUN groupadd --gid 10001 app \

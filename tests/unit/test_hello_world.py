@@ -27,5 +27,9 @@ async def test_hello_world_is_registered_and_callable_over_mcp() -> None:
         tools = await client.list_tools()
         result = await client.call_tool("hello_world", {"name": "Open WebUI"})
 
-    assert [tool.name for tool in tools] == ["hello_world"]
+    assert {tool.name for tool in tools} == {
+        "hello_world",
+        "list_connections",
+        "test_connection",
+    }
     assert result.data == {"message": "Hello, Open WebUI!"}

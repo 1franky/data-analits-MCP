@@ -2,8 +2,8 @@
 
 Estados permitidos: `TODO`, `IN_PROGRESS`, `BLOCKED`, `DONE`.
 
-Sprint 0 es el único autorizado en la rama actual. Los archivos y pruebas de sprints posteriores son
-planificación, no implementaciones existentes.
+Sprint 1 está autorizado en la rama actual. No se implementan historias de Sprint 2 ni posteriores
+hasta completar la validación y recibir aprobación explícita.
 
 ## Sprint 0 — Descubrimiento, arquitectura y bootstrap
 
@@ -17,10 +17,10 @@ planificación, no implementaciones existentes.
 
 | Historia | Estado | Dependencias | Archivos previstos | Pruebas requeridas | Criterios de aceptación | Bloqueos |
 |---|---|---|---|---|---|---|
-| HU-101 Configurar conexiones por YAML | TODO | Sprint 0 aprobado | `connections.yaml`, `app/config/`, modelos | Config válida/inválida, duplicados, secretos, deshabilitadas | Pydantic valida; secretos desde entorno; errores claros | Espera aprobación Sprint 0 |
-| HU-102 Listar conexiones | TODO | HU-101 | `app/services/`, `app/tools/`, modelos | Contrato y ausencia de secretos | ID, nombre, tipo, capacidades y estado sin credenciales | Espera HU-101 |
-| HU-103 Probar conexión | TODO | HU-101, adaptador | Servicios/herramientas de conexión | Éxito, timeout y errores redactados | Latencia y error normalizado sin secretos | Requiere DB/driver real |
-| HU-104 Consultar PostgreSQL | TODO | HU-101 | `app/adapters/postgres/`, interfaces base | Schemas, tablas, PK/FK, descripción | Adaptador SQL funcional y tipado | Requiere laboratorio PostgreSQL ARM64 |
+| HU-101 Configurar conexiones por YAML | DONE | Sprint 0 aprobado | `connections.yaml`, `app/config/`, modelos | Config válida/inválida, duplicados, secretos, deshabilitadas | Pydantic valida; secretos desde entorno; errores claros | Ninguno |
+| HU-102 Listar conexiones | DONE | HU-101 | `app/services/`, `app/tools/`, modelos | Contrato y ausencia de secretos | ID, nombre, tipo, capacidades y estado sin credenciales | Ninguno |
+| HU-103 Probar conexión | DONE | HU-101, adaptador | Servicios/herramientas de conexión | Éxito, timeout y errores redactados | Latencia y error normalizado sin secretos | Ninguno |
+| HU-104 Consultar PostgreSQL | DONE | HU-101 | `app/adapters/postgres/`, interfaces base | Schemas, tablas, PK/FK, descripción | Adaptador SQL funcional y tipado | Ninguno |
 
 ## Sprint 2 — Catálogo y caché de schemas
 
@@ -114,4 +114,27 @@ MCP sobre ai-platform: PASS — hello_world devuelve Hello, Open WebUI!
 runtime user: PASS — uid=10001(app), gid=10001(app)
 runtime restrictions: PASS — raíz read-only, red ai-platform
 runtime platform: PASS — linux/arm64, 234216757 bytes
+```
+
+## Evidencia de validación de Sprint 1
+
+Validación ejecutada el 2026-07-14 sobre Docker Desktop ARM64:
+
+```text
+Python del target test: PASS — Python 3.12.13, linux/arm64
+pytest: PASS — 29 passed, 2 integration skipped in 2.21s
+pytest integration PostgreSQL: PASS — 2 passed, 29 deselected in 2.17s
+ruff check app tests: PASS — All checks passed
+ruff format --check app tests: PASS — 38 files already formatted
+mypy app tests: PASS — no issues found in 38 source files
+docker compose config --quiet: PASS
+docker build --target test: PASS — image sha256:8c730253dfd...
+docker compose build: PASS — MCP sha256:528603875747..., PostgreSQL sha256:76ccd18b65ee...
+container health: PASS — ambos servicios healthy; GET /health devuelve versión 0.2.0
+MCP sobre ai-platform: PASS — hello_world, list_connections y test_connection disponibles
+PostgreSQL metadata: PASS — public; clientes, productos, ventas; columnas, PK y dos FK de ventas
+PostgreSQL readonly: PASS — SELECT=true, INSERT=false y escritura bloqueada por integración
+runtime user: PASS — uid=10001(app), gid=10001(app)
+runtime restrictions: PASS — raíz read-only, red externa ai-platform
+runtime platform: PASS — MCP y laboratorio linux/arm64
 ```
