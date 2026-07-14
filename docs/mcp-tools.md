@@ -1,7 +1,7 @@
 # Herramientas MCP disponibles
 
 El transporte es Streamable HTTP en `/mcp`. Los modelos de respuesta se serializan como datos
-estructurados. Ninguna herramienta de Sprint 1 acepta SQL.
+estructurados. Ninguna herramienta de Sprint 2 acepta SQL ni devuelve filas de negocio.
 
 ## `hello_world`
 
@@ -69,3 +69,34 @@ Ejemplo de éxito:
 ```
 
 Un error nunca incluye el secreto ni el texto completo del driver.
+
+## `refresh_schema_cache`
+
+Actualiza la metadata de una conexión o todas las conexiones habilitadas.
+
+- Parámetro opcional: `connection_id`.
+- Respuesta por conexión: `outcome`, fechas, hash, conteos, código y mensaje.
+- Outcomes: `success`, `error`, `already_running` o `disabled`.
+- Un error conserva el último snapshot válido y queda visible en el estado.
+
+## `get_schema_cache_status`
+
+Informa el último intento y la frescura calculada de una o todas las conexiones.
+
+- Parámetro opcional: `connection_id`.
+- Respuesta: `state`, `has_snapshot`, `stale`, fechas, hash, error y mensaje.
+- Estados persistentes: `never`, `refreshing`, `success` y `error`.
+- `stale` se calcula con `stale_after_minutes`; no implica eliminar el snapshot.
+
+## `search_catalog`
+
+Busca sobre el último snapshot válido sin conectarse a la base origen.
+
+- Parámetros: `query`, `connection_id` opcional y `max_results` entre 1 y 100.
+- Busca nombres y descripciones de tablas, y nombres/descripciones de columnas.
+- Todos los términos deben aparecer dentro de la tabla candidata.
+- Devuelve columnas coincidentes, score y relaciones FK entrantes/salientes.
+- Incluye `cache_statuses` para que el cliente advierta resultados obsoletos o errores recientes.
+
+La búsqueda vacía, un límite inválido o una conexión inexistente generan errores de dominio
+explícitos. Una búsqueda válida sin snapshot devuelve cero resultados y estado `never`/`stale`.

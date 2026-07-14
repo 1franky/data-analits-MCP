@@ -43,6 +43,38 @@ def test_loader_parses_valid_connection_without_resolving_password(tmp_path: Pat
     assert "password" not in connection.model_dump()
 
 
+def test_loader_parses_catalog_policy(tmp_path: Path) -> None:
+    source = (
+        _VALID_YAML
+        + """
+catalog:
+  refresh_interval_minutes: 15
+  stale_after_minutes: 45
+  exclude_table_patterns: ["audit.*"]
+"""
+    )
+
+    config = ConnectionsConfigLoader(write_config(tmp_path, source)).load()
+
+    assert config.catalog.refresh_interval_minutes == 15
+    assert config.catalog.stale_after_minutes == 45
+    assert config.catalog.exclude_table_patterns == ("audit.*",)
+
+
+def test_loader_rejects_enabled_catalog_without_include_patterns(tmp_path: Path) -> None:
+    source = (
+        _VALID_YAML
+        + """
+catalog:
+  enabled: true
+  include_table_patterns: []
+"""
+    )
+
+    with pytest.raises(ConfigurationError, match="include_table_patterns"):
+        ConnectionsConfigLoader(write_config(tmp_path, source)).load()
+
+
 def test_loader_rejects_duplicate_ids(tmp_path: Path) -> None:
     duplicate = _VALID_YAML + _VALID_YAML.split("connections:\n", maxsplit=1)[1]
 

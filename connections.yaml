@@ -15,3 +15,15 @@ connections:
     options:
       application_name: data-platform-mcp
       sslmode: disable
+
+catalog:
+  enabled: true
+  refresh_interval_minutes: 60
+  refresh_on_startup: true
+  stale_after_minutes: 120
+  excluded_schemas:
+    - information_schema
+    - pg_catalog
+  include_table_patterns:
+    - "*"
+  exclude_table_patterns: []

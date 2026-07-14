@@ -1,11 +1,11 @@
 # Seguridad
 
-## Alcance y amenazas de Sprint 1
+## Alcance y amenazas de Sprint 2
 
 Los activos principales son credenciales de base de datos, metadata técnica y disponibilidad del
 servicio. Las amenazas relevantes son exposición de secretos, abuso de una conexión privilegiada,
-inyección en consultas de metadata, escritura accidental y exposición del MCP fuera de la red de
-confianza.
+inyección en consultas de metadata, almacenamiento accidental de filas, escritura accidental y
+exposición del MCP fuera de la red de confianza.
 
 ## Capas implementadas
 
@@ -19,6 +19,8 @@ confianza.
 8. Timeouts de conexión validados y aplicados.
 9. Contenedor MCP no-root, raíz readonly, sin capabilities y `no-new-privileges`.
 10. Publicación de puertos en loopback por defecto.
+11. SQLite contiene sólo schemas, tablas, columnas, comentarios, PK, FK, hashes y estados.
+12. Filtros de catálogo aplicados antes de describir tablas; escritura limitada al volumen propio.
 
 ## Operaciones permitidas
 
@@ -26,13 +28,14 @@ confianza.
 - Listar declaraciones y capacidades no sensibles.
 - Probar conectividad con `SELECT 1`.
 - Desde el adaptador interno: leer catálogos para schemas, tablas, columnas, PK y FK.
+- Actualizar, consultar estado y buscar dentro del caché técnico persistente.
 
 ## Operaciones no disponibles
 
 - Ejecutar SQL proporcionado por usuarios o LLM.
 - INSERT, UPDATE, DELETE, DDL o llamadas a procedimientos.
 - Leer filas de negocio mediante herramientas MCP.
-- RAG, catálogo persistente o generación SQL.
+- RAG, generación, validación o ejecución SQL.
 
 No existe un endpoint oculto ni una función de confirmación que habilite escritura.
 
@@ -47,7 +50,7 @@ No existe un endpoint oculto ni una función de confirmación que habilite escri
 
 ## Limitaciones conocidas
 
-Sprint 1 no incorpora autenticación/autorización MCP, rate limiting, auditoría, logs estructurados,
+Sprint 2 no incorpora autenticación/autorización MCP, rate limiting, auditoría, logs estructurados,
 readiness de dependencias ni gestión nativa de secretos. La red Docker compartida es la frontera de
 confianza provisional. Estas limitaciones impiden considerar el servicio listo para exposición
 pública.

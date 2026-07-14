@@ -19,3 +19,11 @@ CREATE TABLE ventas (
     cantidad INTEGER NOT NULL,
     fecha TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+COMMENT ON TABLE clientes IS 'Clientes registrados en la plataforma comercial.';
+COMMENT ON COLUMN clientes.correo IS 'Correo electrónico único del cliente.';
+COMMENT ON TABLE productos IS 'Productos disponibles para venta e inventario.';
+COMMENT ON COLUMN productos.stock IS 'Unidades actualmente disponibles.';
+COMMENT ON TABLE ventas IS 'Ventas realizadas a clientes de productos del catálogo.';
+COMMENT ON COLUMN ventas.cliente_id IS 'Cliente que realizó la compra.';
+COMMENT ON COLUMN ventas.producto_id IS 'Producto incluido en la venta.';

@@ -66,3 +66,7 @@ class DatabaseObjectNotFoundError(DataPlatformError):
             code="DATABASE_OBJECT_NOT_FOUND",
             message=f"El objeto '{schema}.{object_name}' no existe o no es visible.",
         )
+
+
+class CatalogRequestError(DataPlatformError):
+    """Raised when a catalog request violates its public contract."""

@@ -2,7 +2,7 @@
 
 Estados permitidos: `TODO`, `IN_PROGRESS`, `BLOCKED`, `DONE`.
 
-Sprint 1 está autorizado en la rama actual. No se implementan historias de Sprint 2 ni posteriores
+Sprint 2 está autorizado en la rama actual. No se implementan historias de Sprint 3 ni posteriores
 hasta completar la validación y recibir aprobación explícita.
 
 ## Sprint 0 — Descubrimiento, arquitectura y bootstrap
@@ -26,9 +26,9 @@ hasta completar la validación y recibir aprobación explícita.
 
 | Historia | Estado | Dependencias | Archivos previstos | Pruebas requeridas | Criterios de aceptación | Bloqueos |
 |---|---|---|---|---|---|---|
-| HU-201 Actualizar catálogo | TODO | Sprint 1 | `app/catalog/`, `app/services/catalog.py` | Refresh individual/global, error conserva caché | Estado, fecha, errores; nunca datos de negocio | Espera adaptador PostgreSQL |
-| HU-202 Consultar catálogo | TODO | HU-201 | Repositorio y herramientas de catálogo | Búsqueda, filtros, relaciones, stale | Busca tablas/columnas; indica obsolescencia | Espera HU-201 |
-| HU-203 Refresh periódico | TODO | HU-201 | Scheduler y coordinación | Intervalo, exclusión mutua, fallos | Configurable, observable y sin refresh duplicado | Espera persistencia de catálogo |
+| HU-201 Actualizar catálogo | DONE | Sprint 1 | Modelos, `app/services/catalog.py`, repositorio SQLite | Refresh individual/global, error conserva caché | Estado, fecha, errores; nunca datos de negocio | Ninguno |
+| HU-202 Consultar catálogo | DONE | HU-201 | Repositorio y herramientas de catálogo | Búsqueda, filtros, relaciones, stale | Busca tablas/columnas; indica obsolescencia | Ninguno |
+| HU-203 Refresh periódico | DONE | HU-201 | Scheduler y coordinación | Intervalo, exclusión mutua, fallos | Configurable, observable y sin refresh duplicado | Ninguno |
 
 ## Sprint 3 — Validación y ejecución SQL segura
 
@@ -136,5 +136,28 @@ PostgreSQL metadata: PASS — public; clientes, productos, ventas; columnas, PK 
 PostgreSQL readonly: PASS — SELECT=true, INSERT=false y escritura bloqueada por integración
 runtime user: PASS — uid=10001(app), gid=10001(app)
 runtime restrictions: PASS — raíz read-only, red externa ai-platform
+runtime platform: PASS — MCP y laboratorio linux/arm64
+```
+
+## Evidencia de validación de Sprint 2
+
+Validación ejecutada el 2026-07-14 sobre Docker Desktop ARM64:
+
+```text
+Python del target test: PASS — Python 3.12.13, linux/arm64
+pytest unitario: PASS — 45 passed, 3 integration deselected in 1.26s
+pytest integración PostgreSQL: PASS — 3 passed, 45 deselected in 0.99s
+ruff check app tests: PASS — All checks passed
+ruff format --check app tests: PASS — 52 files already formatted
+mypy app tests: PASS — no issues found in 52 source files
+docker compose config --quiet: PASS
+docker build --target test: PASS — image sha256:8f7b3f339604...
+docker compose build: PASS — MCP sha256:07ee78b2bc1d..., PostgreSQL sha256:61e2fab33e4d...
+container health: PASS — ambos servicios healthy; GET /health devuelve versión 0.3.0
+MCP sobre ai-platform: PASS — seis tools disponibles; refresh startup y búsqueda reales exitosos
+catálogo metadata-only: PASS — clientes/productos/ventas presentes; valores de filas ausentes
+persistencia: PASS — volumen catalog-data escribible sobre raíz read-only
+runtime user: PASS — uid=10001(app), gid=10001(app)
+runtime restrictions: PASS — raíz read-only, cap_drop ALL, no-new-privileges, ai-platform
 runtime platform: PASS — MCP y laboratorio linux/arm64
 ```

@@ -45,6 +45,8 @@ def test_postgres_connection_and_metadata_contract() -> None:
         "fecha",
     )
     assert ventas.primary_key == ("id",)
+    assert ventas.description == "Ventas realizadas a clientes de productos del catálogo."
+    assert ventas.columns[1].description == "Cliente que realizó la compra."
     assert {
         (
             foreign_key.columns,

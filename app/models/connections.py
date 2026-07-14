@@ -8,6 +8,42 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 ConnectionOptionValue = str | int | bool
 
 
+class CatalogConfig(BaseModel):
+    """Validated catalog refresh, expiry and filtering policy."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = True
+    refresh_interval_minutes: Annotated[int, Field(ge=1, le=10_080)] = 60
+    refresh_on_startup: bool = True
+    stale_after_minutes: Annotated[int, Field(ge=1, le=43_200)] = 120
+    excluded_schemas: tuple[str, ...] = ("information_schema", "pg_catalog")
+    include_table_patterns: tuple[str, ...] = ("*",)
+    exclude_table_patterns: tuple[str, ...] = ()
+
+    @field_validator(
+        "excluded_schemas",
+        "include_table_patterns",
+        "exclude_table_patterns",
+    )
+    @classmethod
+    def normalize_catalog_filters(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        """Normalize filter entries and reject blanks or duplicates."""
+        normalized = tuple(value.strip() for value in values)
+        if any(not value for value in normalized):
+            raise ValueError("los filtros del catálogo no pueden estar vacíos")
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("los filtros del catálogo no pueden estar duplicados")
+        return normalized
+
+    @model_validator(mode="after")
+    def require_include_pattern(self) -> Self:
+        """Ensure an enabled catalog has at least one inclusion pattern."""
+        if self.enabled and not self.include_table_patterns:
+            raise ValueError("un catálogo habilitado requiere include_table_patterns")
+        return self
+
+
 class ConnectionType(StrEnum):
     """Known engine identifiers accepted by configuration."""
 
@@ -118,6 +154,7 @@ class ConnectionsConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     connections: tuple[ConnectionConfig, ...]
+    catalog: CatalogConfig = Field(default_factory=CatalogConfig)
 
     @field_validator("connections")
     @classmethod
@@ -189,6 +226,7 @@ class ColumnInfo(BaseModel):
     data_type: str
     nullable: bool
     default: str | None
+    description: str | None = None
 
 
 class ForeignKeyInfo(BaseModel):
@@ -210,6 +248,7 @@ class TableDescription(BaseModel):
 
     schema_name: str = Field(alias="schema")
     name: str
+    description: str | None = None
     columns: tuple[ColumnInfo, ...]
     primary_key: tuple[str, ...]
     foreign_keys: tuple[ForeignKeyInfo, ...]
