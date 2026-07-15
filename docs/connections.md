@@ -50,7 +50,7 @@ audit:
 |---|---|
 | `id` | Único; minúsculas, números y guiones; 1–63 caracteres. |
 | `name` | Nombre visible no vacío. |
-| `type` | Motor conocido. Solo `postgres` tiene adaptador hasta Sprint 3. |
+| `type` | Motor conocido. Actualmente solo `postgres` tiene adaptador. |
 | `host` | DNS/IP visible desde el contenedor. |
 | `port` | Entero entre 1 y 65535. |
 | `database` | Base objetivo. |
@@ -107,8 +107,8 @@ ruta configurable del contenedor.
 5. Reinicia `data-platform-mcp`.
 6. Invoca `list_connections` y después `test_connection`.
 
-Hasta Sprint 3 solo PostgreSQL puede habilitarse. Otros motores deben permanecer `enabled: false` hasta
-que exista y se pruebe su adaptador.
+Actualmente solo PostgreSQL puede habilitarse. Otros motores deben permanecer `enabled: false`
+hasta que exista y se pruebe su adaptador.
 
 ## Política del catálogo
 

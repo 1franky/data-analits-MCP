@@ -18,7 +18,10 @@ async def test_scheduler_refreshes_on_startup_and_periodically(tmp_path: Path) -
 
     await scheduler.start()
     assert scheduler.running is True
-    await asyncio.sleep(0.075)
+    for _ in range(100):
+        if adapter.refresh_calls >= 2:
+            break
+        await asyncio.sleep(0.01)
     await scheduler.stop()
 
     assert adapter.refresh_calls >= 2

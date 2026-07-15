@@ -1,8 +1,10 @@
 # Herramientas MCP disponibles
 
-El transporte es Streamable HTTP en `/mcp`. Los modelos de respuesta se serializan como datos
-estructurados. Sprint 3 incorpora una superficie SQL PostgreSQL estrictamente de lectura; no existe
-ninguna herramienta que ejecute escrituras.
+El catálogo contiene 15 tools y es idéntico por Streamable HTTP en `/mcp` y por STDIO mediante
+`data-platform-mcp-stdio`. Los modelos se serializan como datos estructurados. Los seis envelopes
+añadidos en Sprint 4 incluyen `contract_version: "1.0.0"`; consulta la
+[política de compatibilidad](mcp-contracts.md). No existe ninguna herramienta que ejecute
+escrituras.
 
 ## `hello_world`
 
@@ -11,6 +13,24 @@ Verifica que la sesión MCP puede listar e invocar herramientas.
 - Parámetro: `name: str = "world"`.
 - Respuesta: `{"message": "Hello, <name>!"}`.
 - Acceso externo: ninguno.
+
+## `health_check`
+
+Verifica el proceso MCP sin depender de PostgreSQL ni del catálogo.
+
+- Parámetros: ninguno.
+- Respuesta: `contract_version`, `status`, `service` y `server_version`.
+- `status` actual: `ok`.
+- Acceso externo: ninguno.
+
+```json
+{
+  "contract_version": "1.0.0",
+  "status": "ok",
+  "service": "data-platform-mcp",
+  "server_version": "0.5.0"
+}
+```
 
 ## `list_connections`
 
@@ -47,6 +67,15 @@ Ejemplo conceptual:
   }
 ]
 ```
+
+## `get_connection_capabilities`
+
+Obtiene la declaración segura y matriz de capacidades de una conexión concreta.
+
+- Parámetro requerido: `connection_id`.
+- Respuesta: `contract_version`, `connection_id` y `connection`.
+- `connection` tiene la misma forma no sensible que un elemento de `list_connections`.
+- Error entendible si el ID no existe; nunca resuelve ni devuelve el secreto.
 
 ## `test_connection`
 
@@ -103,6 +132,73 @@ Busca sobre el último snapshot válido sin conectarse a la base origen.
 
 La búsqueda vacía, un límite inválido o una conexión inexistente generan errores de dominio
 explícitos. Una búsqueda válida sin snapshot devuelve cero resultados y estado `never`/`stale`.
+
+## `list_schemas`
+
+Lista los schemas visibles del último snapshot válido de una conexión.
+
+- Parámetro requerido: `connection_id`.
+- Respuesta: `contract_version`, `connection_id`, `schemas` y `cache_status`.
+- No se conecta a PostgreSQL durante la llamada; lee SQLite.
+- Sin snapshot devuelve un error que indica ejecutar `refresh_schema_cache`.
+
+## `list_tables`
+
+Lista tablas cacheadas con un resumen estable.
+
+- Parámetro requerido: `connection_id`.
+- Parámetro opcional: `schema`, coincidencia exacta y máximo 128 caracteres.
+- Respuesta: `contract_version`, `connection_id`, `schema_filter`, `tables` y `cache_status`.
+- Cada tabla incluye `schema`, `name`, `kind`, `description`, `column_count` y `primary_key`.
+- Un filtro válido sin coincidencias devuelve `tables: []`.
+
+## `describe_table`
+
+Devuelve el detalle técnico de una tabla cacheada.
+
+- Parámetros requeridos: `connection_id`, `schema` y `table`.
+- Respuesta: `contract_version`, `connection_id`, `table` y `cache_status`.
+- `table` incluye `schema`, `name`, `kind`, comentario, columnas ordenadas, PK, índices únicos
+  completos y FK.
+- Cada columna incluye posición, nombre, tipo PostgreSQL, nulabilidad, default y comentario.
+- Si el objeto no existe o no es visible, el error identifica el nombre calificado solicitado.
+
+Ejemplo abreviado:
+
+```json
+{
+  "contract_version": "1.0.0",
+  "connection_id": "postgres-demo",
+  "table": {
+    "schema": "public",
+    "name": "clientes",
+    "kind": "table",
+    "primary_key": ["id"],
+    "unique_keys": [
+      {"name": "clientes_correo_key", "columns": ["correo"]}
+    ],
+    "foreign_keys": []
+  }
+}
+```
+
+El ejemplo omite `columns`, `description` y `cache_status` solo para hacerlo legible; la respuesta
+real siempre respeta el output schema publicado.
+
+## `list_relationships`
+
+Lista relaciones FK desde el origen que contiene la FK hacia la tabla referenciada.
+
+- Parámetro requerido: `connection_id`.
+- Parámetros opcionales: `schema` y `table`; cada filtro coincide con origen o destino.
+- Respuesta: `contract_version`, `connection_id`, filtros efectivos, `relationships` y
+  `cache_status`.
+- Cada relación incluye nombre, schema/tabla/columnas de origen y destino, `cardinality` y
+  `cardinality_inference`.
+- `one-to-one` se infiere cuando las columnas origen son PK o índice único completo;
+  `many-to-one` cuando no tienen unicidad declarada.
+- No se infiere desde filas ni se afirma opcionalidad; la evidencia queda explícita en
+  `cardinality_inference`.
 
 ## `validate_sql`
 

@@ -3,6 +3,7 @@
 from app.exceptions.domain import (
     AdapterNotAvailableError,
     CatalogRequestError,
+    CatalogSnapshotNotFoundError,
     ConfigurationError,
     ConnectionDisabledError,
     ConnectionNotFoundError,
@@ -15,6 +16,7 @@ from app.exceptions.domain import (
 __all__ = [
     "AdapterNotAvailableError",
     "CatalogRequestError",
+    "CatalogSnapshotNotFoundError",
     "ConfigurationError",
     "ConnectionDisabledError",
     "ConnectionNotFoundError",

@@ -2,8 +2,8 @@
 
 Estados permitidos: `TODO`, `IN_PROGRESS`, `BLOCKED`, `DONE`.
 
-Sprint 3 está autorizado en la rama actual. No se implementan historias de Sprint 4 ni posteriores
-hasta completar la validación y recibir aprobación explícita.
+Sprint 4 está implementado en la rama actual. No se inicia Sprint 5 ni historias posteriores hasta
+completar la validación y recibir aprobación explícita.
 
 ## Sprint 0 — Descubrimiento, arquitectura y bootstrap
 
@@ -43,9 +43,9 @@ hasta completar la validación y recibir aprobación explícita.
 
 | Historia | Estado | Dependencias | Archivos previstos | Pruebas requeridas | Criterios de aceptación | Bloqueos |
 |---|---|---|---|---|---|---|
-| HU-401 Explorar tablas | TODO | Sprints 1–2 | `app/tools/`, modelos MCP | Contratos, errores, conexión | `list_schemas`, `list_tables`, `describe_table` | Espera catálogo/adaptador |
-| HU-402 Consultar relaciones | TODO | HU-401 | Herramienta/modelos de relaciones | FK y cardinalidad disponible | Origen, destino y columnas relacionadas | Espera metadata real |
-| HU-403 Contratos versionados | TODO | HU-401–402 | Documentación MCP y modelos | Pruebas de contrato | Versionado y cambios incompatibles registrados | Espera catálogo de tools |
+| HU-401 Explorar tablas | DONE | Sprints 1–2 | `app/tools/`, modelos MCP | Contratos, errores, conexión | `list_schemas`, `list_tables`, `describe_table` | Ninguno |
+| HU-402 Consultar relaciones | DONE | HU-401 | Herramienta/modelos de relaciones | FK y cardinalidad disponible | Origen, destino y columnas relacionadas | Ninguno |
+| HU-403 Contratos versionados | DONE | HU-401–402 | Documentación MCP y modelos | Pruebas de contrato | Versionado y cambios incompatibles registrados | Ninguno |
 
 ## Sprint 5 — Generación de consultas mediante lenguaje natural
 
@@ -183,4 +183,25 @@ EXPLAIN: PASS — plan JSON real con ANALYZE desactivado
 auditoría: PASS — hash/decisión persistidos; SQL, parámetros y filas ausentes de SQLite
 runtime restrictions: PASS — UID 10001, raíz read-only, cap_drop ALL, no-new-privileges
 runtime platform: PASS — MCP y laboratorio linux/arm64 sobre red externa ai-platform
+```
+
+## Evidencia de validación de Sprint 4
+
+Validación ejecutada el 2026-07-14 sobre Docker Desktop ARM64:
+
+```text
+Python del target test: PASS — Python 3.12.13, linux/arm64
+pytest unitario/contratos/STDIO: PASS — 92 passed, 11 integration deselected in 15.16s
+pytest integración PostgreSQL: PASS — 11 passed, 92 deselected in 8.18s
+ruff check: PASS — All checks passed
+ruff format --check: PASS — 76 files already formatted
+mypy app tests: PASS — no issues found in 75 source files
+docker compose config --quiet: PASS
+docker build --target test: PASS — image sha256:5dc42ec8f91c...
+docker compose build/up: PASS — MCP sha256:4ea1cd7a8f92..., ambos servicios healthy
+MCP HTTP smoke: PASS — 15 tools, contrato 1.0.0, refresh y metadata PostgreSQL reales
+MCP STDIO: PASS — subproceso lista tools e invoca health_check 0.5.0
+metadata: PASS — schemas, tablas, comentarios, PK, índices únicos, FK y cardinalidad inferida
+runtime restrictions: PASS — UID 10001, raíz read-only, cap_drop ALL, no-new-privileges
+runtime platform: PASS — MCP linux/arm64 sobre red externa ai-platform
 ```

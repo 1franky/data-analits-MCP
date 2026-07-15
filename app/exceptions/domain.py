@@ -70,3 +70,16 @@ class DatabaseObjectNotFoundError(DataPlatformError):
 
 class CatalogRequestError(DataPlatformError):
     """Raised when a catalog request violates its public contract."""
+
+
+class CatalogSnapshotNotFoundError(DataPlatformError):
+    """Raised when metadata exploration has no valid cached snapshot."""
+
+    def __init__(self, connection_id: str) -> None:
+        super().__init__(
+            code="CATALOG_SNAPSHOT_NOT_FOUND",
+            message=(
+                f"La conexión '{connection_id}' no tiene un snapshot de catálogo; "
+                "ejecuta refresh_schema_cache primero."
+            ),
+        )

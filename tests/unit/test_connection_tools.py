@@ -54,6 +54,22 @@ def test_test_connection_tool_returns_normalized_result(
     assert result.error_code is None
 
 
+def test_get_connection_capabilities_returns_versioned_safe_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = build_service()
+    monkeypatch.setattr(connection_tools, "get_connection_service", lambda: service)
+
+    result = connection_tools.get_connection_capabilities("postgres-demo")
+    serialized = result.model_dump(mode="json")
+
+    assert result.contract_version == "1.0.0"
+    assert result.connection_id == "postgres-demo"
+    assert result.connection.capabilities == _CAPABILITIES
+    assert "host" not in serialized["connection"]
+    assert "unit-test-secret" not in str(serialized)
+
+
 def test_test_connection_tool_normalizes_unknown_connection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -78,8 +94,14 @@ async def test_connection_tools_are_callable_over_mcp(
             "test_connection",
             {"connection_id": "postgres-demo"},
         )
+        capabilities = await client.call_tool(
+            "get_connection_capabilities",
+            {"connection_id": "postgres-demo"},
+        )
 
     assert listed.data[0].id == "postgres-demo"
     assert "password" not in repr(listed.data[0])
     assert tested.data.success is True
     assert tested.data.connection_id == "postgres-demo"
+    assert capabilities.data.contract_version == "1.0.0"
+    assert capabilities.data.connection.capabilities.query_language == "sql"

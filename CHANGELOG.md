@@ -39,6 +39,16 @@ Todos los cambios relevantes de este proyecto se documentan en este archivo. El 
 - Pruebas de ataques, bypass, aislamiento del adaptador e integración de JOIN, CTE, agregaciones,
   ventanas, límites, timeout, escritura bloqueada y planes reales.
 - Documentación de política SQL segura, contratos MCP y riesgos residuales de funciones.
+- Herramientas MCP `health_check`, `get_connection_capabilities`, `list_schemas`, `list_tables`,
+  `describe_table` y `list_relationships`, para un catálogo total de 15 tools.
+- Envelopes MCP `1.0.0` con conexión utilizada y frescura del snapshot para exploración de metadata.
+- Descubrimiento PostgreSQL de índices únicos simples/completos e inferencia explicable de
+  cardinalidad `one-to-one` o `many-to-one` para relaciones FK.
+- Transporte MCP local STDIO mediante `data-platform-mcp-stdio`, conservando Streamable HTTP en
+  `/mcp` para Open WebUI y otros clientes de red.
+- Pruebas de catálogo, schemas JSON de entrada/salida, registro completo de tools y subproceso STDIO.
+- Script `scripts/smoke_mcp.py` para validar el contrato contra un despliegue real por red.
+- Política de versionado y compatibilidad MCP, catálogo de entradas/salidas y arquitectura Sprint 4.
 
 ### Security
 
@@ -58,9 +68,12 @@ Todos los cambios relevantes de este proyecto se documentan en este archivo. El 
 
 - El target Docker de pruebas conserva `tests/` en el contexto de build.
 - La prueba HTTP usa transporte ASGI directo y no genera advertencias deprecatorias de TestClient.
+- La prueba periódica del scheduler espera una condición acotada en lugar de depender de una pausa
+  fija sensible a carga del host.
 
 ### Not implemented
 
 - RAG y generación desde lenguaje natural.
-- Ejecución de escritura, procedimientos y triggers.
+- Procedimientos, vistas, triggers y explicaciones de objetos de base de datos.
+- Ejecución de escritura de cualquier tipo.
 - Autenticación, consulta/retención administrativa de auditoría y métricas operativas.

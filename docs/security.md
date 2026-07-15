@@ -1,6 +1,6 @@
 # Seguridad
 
-## Alcance y amenazas de Sprint 3
+## Alcance y amenazas de Sprint 4
 
 Los activos principales son credenciales, datos consultados, metadata, auditoría y disponibilidad.
 Las amenazas cubiertas incluyen exposición de secretos, SQL de escritura, bypass mediante múltiples
@@ -28,6 +28,8 @@ inyección en parámetros y persistencia accidental de datos sensibles.
 13. Auditoría append-only con hash SHA-256, tipo, decisión, razones, duración y conteo; sin SQL,
     parámetros ni resultados.
 14. Contenedor no-root, raíz readonly, sin capabilities, `no-new-privileges` y puertos en loopback.
+15. Exploración MCP sobre snapshots de metadata, sin consultar filas ni resolver secretos durante
+    `list_schemas`, `list_tables`, `describe_table` o `list_relationships`.
 
 ## Operaciones permitidas
 
@@ -36,6 +38,7 @@ inyección en parámetros y persistencia accidental de datos sensibles.
 - Ejecutar un único `SELECT` PostgreSQL validado y acotado.
 - Generar el plan JSON de ese `SELECT` sin `ANALYZE`.
 - Actualizar y buscar el caché técnico persistente.
+- Listar schemas, tablas y relaciones, y describir tablas desde el snapshot cacheado.
 
 ## Operaciones bloqueadas
 
@@ -78,6 +81,6 @@ usuario. La sesión readonly impide escrituras PostgreSQL ordinarias, pero una f
 tener efectos externos; los privilegios de función son una frontera imprescindible. La denylist es
 defensa adicional, no prueba formal de ausencia de efectos.
 
-Sprint 3 no incorpora autenticación/autorización MCP, rate limiting distribuido, pool de conexiones,
+Sprint 4 no incorpora autenticación/autorización MCP, rate limiting distribuido, pool de conexiones,
 logs estructurados, readiness, rotación/retención de auditoría ni gestión nativa de secretos. La red
 Docker compartida sigue siendo una frontera de confianza provisional.

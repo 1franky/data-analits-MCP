@@ -31,6 +31,7 @@ def test_postgres_connection_and_metadata_contract() -> None:
     connection_result = adapter.test_connection()
     schemas = adapter.list_schemas()
     tables = adapter.list_tables("public")
+    clientes = adapter.describe_table("public", "clientes")
     ventas = adapter.describe_table("public", "ventas")
 
     assert connection_result.success is True
@@ -45,6 +46,9 @@ def test_postgres_connection_and_metadata_contract() -> None:
         "fecha",
     )
     assert ventas.primary_key == ("id",)
+    assert ventas.kind == "table"
+    assert clientes.unique_keys[0].name == "clientes_correo_key"
+    assert clientes.unique_keys[0].columns == ("correo",)
     assert ventas.description == "Ventas realizadas a clientes de productos del catálogo."
     assert ventas.columns[1].description == "Cliente que realizó la compra."
     assert {

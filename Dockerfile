@@ -13,8 +13,9 @@ RUN pip install --no-cache-dir .
 
 FROM base AS test
 
-COPY tests ./tests
 RUN pip install --no-cache-dir ".[dev]"
+COPY tests ./tests
+COPY scripts ./scripts
 
 CMD ["pytest"]
 

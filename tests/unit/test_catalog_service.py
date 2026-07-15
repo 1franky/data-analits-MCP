@@ -6,9 +6,19 @@ from threading import Event, Thread
 
 import pytest
 
-from app.exceptions import CatalogRequestError
-from app.models.catalog import CatalogRefreshOutcome, CatalogRefreshState
-from app.models.connections import CatalogConfig
+from app.exceptions import (
+    CatalogRequestError,
+    CatalogSnapshotNotFoundError,
+    DatabaseObjectNotFoundError,
+)
+from app.models.catalog import (
+    CardinalityInference,
+    CatalogRefreshOutcome,
+    CatalogRefreshState,
+    RelationshipCardinality,
+)
+from app.models.connections import CatalogConfig, ForeignKeyInfo, TableDescription, UniqueKeyInfo
+from app.services import CatalogService
 from tests.catalog_fakes import CatalogStubAdapter, MutableClock, build_catalog_service
 
 
@@ -26,6 +36,96 @@ def test_refresh_and_search_include_descriptions_and_relationships(tmp_path: Pat
     assert by_description.matches[0].matched_columns == ("correo",)
     assert by_table.matches[0].relationships[0].source_table == "ventas"
     assert by_table.cache_statuses[0].stale is False
+
+
+def test_cached_metadata_exploration_returns_versioned_structured_models(
+    tmp_path: Path,
+) -> None:
+    service, _repository, _adapter = build_catalog_service(tmp_path / "catalog.db")
+    service.refresh_connection("postgres-demo")
+
+    schemas = service.list_schemas("postgres-demo")
+    tables = service.list_tables("postgres-demo", "public")
+    description = service.describe_table("postgres-demo", "public", "clientes")
+    relationships = service.list_relationships("postgres-demo", table="ventas")
+
+    assert schemas.contract_version == "1.0.0"
+    assert schemas.connection_id == "postgres-demo"
+    assert tuple(schema.name for schema in schemas.schemas) == ("public",)
+    assert schemas.cache_status.stale is False
+    assert {table.name for table in tables.tables} == {"clientes", "productos", "ventas"}
+    assert all(table.schema_name == "public" for table in tables.tables)
+    assert description.table.unique_keys[0].columns == ("correo",)
+    assert relationships.relationships[0].source_table == "ventas"
+    assert relationships.relationships[0].target_table == "clientes"
+    assert relationships.relationships[0].source_columns == ("cliente_id",)
+    assert relationships.relationships[0].target_columns == ("id",)
+    assert relationships.relationships[0].cardinality is RelationshipCardinality.MANY_TO_ONE
+    assert (
+        relationships.relationships[0].cardinality_inference
+        is CardinalityInference.SOURCE_NOT_UNIQUE
+    )
+
+
+@pytest.mark.parametrize(
+    ("primary_key", "unique_keys", "expected_inference"),
+    [
+        (("account_id",), (), CardinalityInference.SOURCE_PRIMARY_KEY),
+        (
+            ("id",),
+            (UniqueKeyInfo(name="profile_account_key", columns=("account_id",)),),
+            CardinalityInference.SOURCE_UNIQUE_KEY,
+        ),
+    ],
+)
+def test_relationship_cardinality_is_inferred_from_source_uniqueness(
+    primary_key: tuple[str, ...],
+    unique_keys: tuple[UniqueKeyInfo, ...],
+    expected_inference: CardinalityInference,
+) -> None:
+    profile = TableDescription(
+        schema="public",
+        name="profiles",
+        columns=(),
+        primary_key=primary_key,
+        unique_keys=unique_keys,
+        foreign_keys=(
+            ForeignKeyInfo(
+                name="profiles_account_id_fkey",
+                columns=("account_id",),
+                referenced_schema="public",
+                referenced_table="accounts",
+                referenced_columns=("id",),
+            ),
+        ),
+    )
+
+    relationship = CatalogService._relationships((profile,))[0]
+
+    assert relationship.cardinality is RelationshipCardinality.ONE_TO_ONE
+    assert relationship.cardinality_inference is expected_inference
+
+
+def test_metadata_exploration_requires_a_valid_snapshot(tmp_path: Path) -> None:
+    service, _repository, _adapter = build_catalog_service(tmp_path / "catalog.db")
+
+    with pytest.raises(CatalogSnapshotNotFoundError, match="refresh_schema_cache"):
+        service.list_schemas("postgres-demo")
+
+
+def test_metadata_exploration_rejects_blank_filters(tmp_path: Path) -> None:
+    service, _repository, _adapter = build_catalog_service(tmp_path / "catalog.db")
+
+    with pytest.raises(CatalogRequestError, match="schema"):
+        service.list_tables("postgres-demo", "   ")
+
+
+def test_describe_table_reports_the_requested_missing_object(tmp_path: Path) -> None:
+    service, _repository, _adapter = build_catalog_service(tmp_path / "catalog.db")
+    service.refresh_connection("postgres-demo")
+
+    with pytest.raises(DatabaseObjectNotFoundError, match=r"public\.missing"):
+        service.describe_table("postgres-demo", "public", "missing")
 
 
 def test_refresh_all_updates_every_enabled_connection(tmp_path: Path) -> None:

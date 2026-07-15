@@ -30,8 +30,8 @@ por el host configurado. Para el flujo completo se recomienda Compose.
 ```bash
 docker build --target test -t data-platform-mcp:test .
 docker run --rm data-platform-mcp:test pytest -m 'not integration'
-docker run --rm data-platform-mcp:test ruff check .
-docker run --rm data-platform-mcp:test ruff format --check .
+docker run --rm data-platform-mcp:test ruff check app tests scripts
+docker run --rm data-platform-mcp:test ruff format --check app tests scripts
 docker run --rm data-platform-mcp:test mypy app tests
 docker compose --env-file .env.example config --quiet
 docker compose --env-file .env.example build data-platform-mcp
@@ -63,6 +63,34 @@ contra PostgreSQL real y que `mcp_readonly` no puede insertar. Desde Sprint 3 ta
 CTE, agregaciones, ventanas, parámetros, límites de filas/bytes, timeout, serialización, auditoría,
 `EXPLAIN` JSON y pruebas que confirman que DML/DDL/bypass no cambian los datos. El valor mostrado
 coincide con el marcador de `.env.example`; usa el secreto real de tu `.env` si lo cambiaste.
+
+Sprint 4 añade aserciones reales de índices únicos, tools de metadata y cardinalidad inferida.
+
+## Validación de transportes MCP
+
+La suite unitaria abre un cliente en memoria para los schemas de contrato y un subproceso real para
+STDIO. Para una prueba manual local del mismo transporte:
+
+```bash
+data-platform-mcp-stdio
+# Alternativa equivalente:
+python -m app.tools.server
+```
+
+Con Compose activo, ejecuta el smoke de Streamable HTTP desde la red externa:
+
+```bash
+docker run --rm \
+  --network ai-platform \
+  data-platform-mcp:test \
+  python scripts/smoke_mcp.py \
+  --url http://data-platform-mcp:8000/mcp \
+  --connection-id postgres-demo
+```
+
+El script exige las 15 herramientas, ejecuta `health_check`, refresca el catálogo y recorre schemas,
+tablas, descripción y relaciones. Termina con código distinto de cero ante un error de transporte,
+tool faltante o fallo del servidor.
 
 ## Prueba manual del servicio
 
@@ -102,7 +130,7 @@ No uses `localhost` desde Open WebUI: apunta al propio contenedor de Open WebUI.
 
 ## Flujo Git
 
-Sprint 3 se desarrolla en `feature/sprint-3-safe-sql`. Antes de solicitar revisión:
+Sprint 4 se desarrolla en `feature/sprint-4-mcp-contracts`. Antes de solicitar revisión:
 
 ```bash
 git status --short

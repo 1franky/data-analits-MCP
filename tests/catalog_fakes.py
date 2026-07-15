@@ -24,6 +24,7 @@ from app.models.connections import (
     SchemaInfo,
     TableDescription,
     TableInfo,
+    UniqueKeyInfo,
 )
 from app.models.query import AdapterQueryPlan, AdapterQueryResult, QueryParameter
 from app.repositories import SqliteCatalogRepository
@@ -144,6 +145,7 @@ class CatalogStubAdapter(SqlDatabaseAdapter):
                 ),
             ),
             primary_key=("id",),
+            unique_keys=(UniqueKeyInfo(name="clientes_correo_key", columns=("correo",)),),
             foreign_keys=(),
         )
         productos = TableDescription(

@@ -2,10 +2,10 @@
 
 ## Alcance actual
 
-Sprint 3 implementa validación SQL real para PostgreSQL, ejecución exclusivamente de lectura,
-`EXPLAIN` seguro y auditoría inicial. Conserva la configuración, el adaptador de metadata y el
-catálogo persistente de sprints anteriores. No implementa generación mediante LLM, RAG,
-procedimientos, escritura ni herramientas del Sprint 4.
+Sprint 4 expone la metadata PostgreSQL cacheada mediante herramientas MCP estructuradas y
+versionadas. Conserva validación SQL real, ejecución exclusivamente de lectura, `EXPLAIN` seguro,
+auditoría, configuración y catálogo persistente de sprints anteriores. No implementa generación
+mediante LLM, RAG, procedimientos, triggers ni escritura.
 
 ## Principios
 
@@ -16,12 +16,16 @@ procedimientos, escritura ni herramientas del Sprint 4.
 5. La seguridad combina AST, límites de aplicación, sesión readonly y permisos del rol de base.
 6. El catálogo almacena solo metadata; la auditoría no almacena SQL, parámetros ni resultados.
 7. Generar y ejecutar SQL son casos de uso distintos; la generación natural queda en Sprint 5.
+8. Los contratos MCP versionados leen el snapshot SQLite y no abren una segunda ruta de acceso a
+   PostgreSQL.
+9. La versión del servidor y la versión del contrato evolucionan de forma independiente.
 
 ## Componentes implementados
 
 ```mermaid
 flowchart LR
-    Client["Open WebUI u otro cliente MCP"] -->|"Streamable HTTP /mcp"| Tools["9 herramientas FastMCP"]
+    NetworkClient["Open WebUI u otro cliente MCP"] -->|"Streamable HTTP /mcp"| Tools["15 herramientas FastMCP"]
+    LocalClient["Cliente MCP local"] -->|"STDIO"| Tools
     Operator["Operador"] -->|"GET /health"| API["FastAPI"]
     Tools --> CS["ConnectionService"]
     Tools --> Cat["CatalogService"]
@@ -43,13 +47,14 @@ flowchart LR
 ```
 
 - `app/config`: carga de YAML y normalización de errores.
-- `app/models`: contratos tipados de conexiones, catálogo, validación, ejecución y auditoría.
+- `app/models`: contratos tipados de conexiones, catálogo, metadata MCP, validación, ejecución y
+  auditoría.
 - `app/security`: reglas PostgreSQL aplicadas sobre el árbol sintáctico.
 - `app/services`: casos de uso de conexión, catálogo, validación, ejecución y auditoría.
 - `app/adapters`: contrato SQL, fábrica por registro y adaptación PostgreSQL.
 - `app/repositories`: contratos e implementaciones SQLite para catálogo y auditoría.
 - `app/scheduler`: actualización del catálogo en un worker thread sin bloquear ASGI.
-- `app/tools`: nueve contratos MCP disponibles hasta Sprint 3.
+- `app/tools`: 15 herramientas; las nuevas respuestas de exploración usan el contrato MCP `1.0.0`.
 - `app/container.py`: composition root y dependencias cacheadas por proceso.
 
 El lifespan valida conexiones y secretos, inicializa ambas persistencias SQLite y arranca el
@@ -104,8 +109,28 @@ normalizado. Al no usar `ANALYZE`, la consulta explicada no se ejecuta.
 
 `CatalogService` mantiene snapshots atómicos de metadata. Dos refreshes simultáneos de una misma
 conexión no se solapan y un error conserva el último snapshot válido. `search_catalog` consulta solo
-SQLite, incluye frescura y adjunta relaciones FK relevantes. El detalle operativo permanece en
-[catalog.md](catalog.md).
+SQLite, incluye frescura y adjunta relaciones FK relevantes. `list_schemas`, `list_tables`,
+`describe_table` y `list_relationships` leen el mismo snapshot, identifican `connection_id` e
+incluyen el estado del caché. Si no existe snapshot, el error indica ejecutar
+`refresh_schema_cache`.
+
+El adaptador conserva PK e índices únicos simples/completos junto con las FK. Una FK cuyas columnas
+origen coinciden con una PK o clave única se informa como `one-to-one`; en los demás casos se
+informa `many-to-one`. `cardinality_inference` hace explícita la evidencia utilizada. Esta inferencia
+describe el máximo origen→destino y no intenta deducir opcionalidad ni reglas funcionales desde
+filas. El detalle operativo permanece en [catalog.md](catalog.md).
+
+## Transportes y contratos MCP
+
+`app.tools.server:mcp` es el único registro. FastAPI monta su aplicación Streamable HTTP en `/mcp`;
+el entry point `data-platform-mcp-stdio` llama `mcp.run()` con el transporte STDIO predeterminado.
+Así ambos transportes comparten nombres, schemas de entrada/salida y versión del servidor.
+
+Los envelopes añadidos en Sprint 4 incluyen `contract_version: "1.0.0"`. El servidor se publica
+como `0.5.0`; un cambio de implementación no obliga a romper el contrato. Las pruebas consultan
+`list_tools`, fijan los 15 nombres y validan los JSON Schemas de entrada/salida. La política de
+compatibilidad y el catálogo completo están en [mcp-contracts.md](mcp-contracts.md) y
+[mcp-tools.md](mcp-tools.md).
 
 ## Persistencia y despliegue
 
@@ -128,4 +153,6 @@ de Oracle Cloud Free Tier; múltiples réplicas requerirían persistencia y coor
 - El semáforo y el scheduler son por proceso; SQLite no es la opción para múltiples réplicas.
 - `/health` es liveness, no readiness de PostgreSQL ni del catálogo.
 - No hay autenticación MCP; `ai-platform` sigue siendo una frontera operativa provisional.
+- La cardinalidad se infiere solo desde unicidad declarada; no modela relaciones muchos-a-muchos
+  implícitas, nulabilidad semántica ni restricciones externas a PostgreSQL.
 - Las imágenes se fijan por versión, no por digest; supply-chain hardening queda pendiente.
