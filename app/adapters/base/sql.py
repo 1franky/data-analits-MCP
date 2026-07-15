@@ -9,10 +9,11 @@ from app.models.connections import (
     TableDescription,
     TableInfo,
 )
+from app.models.query import AdapterQueryPlan, AdapterQueryResult, QueryParameter
 
 
 class SqlDatabaseAdapter(ABC):
-    """Minimum SQL metadata contract delivered in Sprint 1."""
+    """Relational metadata and strictly read-only query contract."""
 
     @property
     @abstractmethod
@@ -38,4 +39,26 @@ class SqlDatabaseAdapter(ABC):
     @abstractmethod
     def describe_table(self, schema: str, table: str) -> TableDescription:
         """Return columns and key metadata for a visible table."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def execute_read_query(
+        self,
+        sql: str,
+        parameters: dict[str, QueryParameter] | None,
+        max_rows: int,
+        timeout_seconds: int,
+        max_serialized_bytes: int,
+    ) -> AdapterQueryResult:
+        """Execute a prevalidated SELECT under database-level safety controls."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def explain_read_query(
+        self,
+        sql: str,
+        parameters: dict[str, QueryParameter] | None,
+        timeout_seconds: int,
+    ) -> AdapterQueryPlan:
+        """Plan a prevalidated SELECT without ANALYZE."""
         raise NotImplementedError

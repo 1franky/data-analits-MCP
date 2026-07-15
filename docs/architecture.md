@@ -2,99 +2,130 @@
 
 ## Alcance actual
 
-Sprint 2 implementa configuración validada, conectividad/metadata PostgreSQL y un catálogo
-persistente consultable. No implementa SQL de usuario, generación, RAG, auditoría ni integración
-funcional con Open WebUI.
+Sprint 3 implementa validación SQL real para PostgreSQL, ejecución exclusivamente de lectura,
+`EXPLAIN` seguro y auditoría inicial. Conserva la configuración, el adaptador de metadata y el
+catálogo persistente de sprints anteriores. No implementa generación mediante LLM, RAG,
+procedimientos, escritura ni herramientas del Sprint 4.
 
 ## Principios
 
 1. El núcleo MCP no depende de un proveedor LLM.
-2. Transporte, casos de uso, persistencia y adaptadores se mantienen separados.
-3. Los secretos se resuelven desde el entorno y nunca forman parte del catálogo o respuestas.
+2. Transporte, casos de uso, persistencia, políticas SQL y adaptadores se mantienen separados.
+3. Toda consulta de usuario se parsea y valida antes de poder obtener un adaptador ejecutable.
 4. Una conexión habilitada debe ser readonly y tener un adaptador registrado.
-5. El catálogo almacena solo metadata técnica; nunca filas de negocio.
-6. Un fallo de refresh conserva el último snapshot válido.
-7. Generar y ejecutar SQL serán casos de uso distintos en sprints posteriores.
+5. La seguridad combina AST, límites de aplicación, sesión readonly y permisos del rol de base.
+6. El catálogo almacena solo metadata; la auditoría no almacena SQL, parámetros ni resultados.
+7. Generar y ejecutar SQL son casos de uso distintos; la generación natural queda en Sprint 5.
 
 ## Componentes implementados
 
 ```mermaid
 flowchart LR
-    Client["Open WebUI u otro cliente MCP"] -->|"Streamable HTTP /mcp"| Tools["FastMCP tools"]
+    Client["Open WebUI u otro cliente MCP"] -->|"Streamable HTTP /mcp"| Tools["9 herramientas FastMCP"]
     Operator["Operador"] -->|"GET /health"| API["FastAPI"]
     Tools --> CS["ConnectionService"]
     Tools --> Cat["CatalogService"]
-    Cat --> CS
+    Tools --> Validator["QueryValidationService"]
+    Tools --> Executor["QueryExecutionService"]
+    Executor --> Validator
+    Executor --> CS
     CS --> Config["Pydantic + connections.yaml"]
     CS --> Factory["AdapterFactory"]
     Factory --> PG["PostgresAdapter"]
-    PG -->|"catálogos internos readonly"| DB["PostgreSQL / mcp_readonly"]
-    Cat --> Repo["CatalogRepository / SQLite"]
+    PG -->|"sesión y rol readonly"| DB["PostgreSQL / mcp_readonly"]
+    Cat --> CatalogDB["Catálogo / SQLite"]
+    Executor --> Audit["AuditService"]
+    Validator --> Policy["Política PostgreSQL / SQLGlot AST"]
+    Audit --> AuditDB["Auditoría / SQLite"]
     Scheduler["CatalogScheduler"] --> Cat
     API --> ASGI["ASGI / Uvicorn"]
     Tools --> ASGI
 ```
 
 - `app/config`: carga de YAML y normalización de errores.
-- `app/models`: conexiones, snapshots, refresh, búsqueda y relaciones tipadas.
-- `app/services`: resolución de conexiones y orquestación del catálogo.
-- `app/adapters`: contrato SQL, fábrica por registro y PostgreSQL.
-- `app/repositories`: contrato de persistencia e implementación SQLite.
-- `app/scheduler`: actualización periódica en un worker thread sin bloquear ASGI.
-- `app/tools`: seis contratos MCP disponibles en Sprint 2.
+- `app/models`: contratos tipados de conexiones, catálogo, validación, ejecución y auditoría.
+- `app/security`: reglas PostgreSQL aplicadas sobre el árbol sintáctico.
+- `app/services`: casos de uso de conexión, catálogo, validación, ejecución y auditoría.
+- `app/adapters`: contrato SQL, fábrica por registro y adaptación PostgreSQL.
+- `app/repositories`: contratos e implementaciones SQLite para catálogo y auditoría.
+- `app/scheduler`: actualización del catálogo en un worker thread sin bloquear ASGI.
+- `app/tools`: nueve contratos MCP disponibles hasta Sprint 3.
 - `app/container.py`: composition root y dependencias cacheadas por proceso.
 
-El lifespan valida conexiones/secretos, inicializa SQLite y arranca el scheduler. Al apagar, espera
-la actualización en curso antes de cerrar.
+El lifespan valida conexiones y secretos, inicializa ambas persistencias SQLite y arranca el
+scheduler. Al apagar, espera la actualización de catálogo en curso antes de cerrar.
 
-## Flujo de refresh
+## Flujo de validación y ejecución
 
 ```mermaid
 sequenceDiagram
-    participant C as Cliente o Scheduler
-    participant S as CatalogService
+    participant C as Cliente MCP
+    participant E as QueryExecutionService
+    participant V as QueryValidationService
     participant A as PostgresAdapter
-    participant R as SQLiteRepository
-    C->>S: refresh(connection_id)
-    S->>S: lock no bloqueante por conexión
-    S->>R: estado refreshing
-    S->>A: schemas, tablas y describe_table
-    A-->>S: metadata, comentarios, PK y FK
-    S->>S: filtros + hash SHA-256 canónico
-    S->>R: snapshot + estado success (transacción)
-    R-->>C: fecha, hash y conteos
+    participant P as PostgreSQL readonly
+    participant R as AuditRepository
+    C->>E: execute_read_query(SQL, parámetros, límites)
+    E->>V: parsear PostgreSQL y validar AST
+    alt bloqueada o parámetros distintos
+        V-->>E: executable=false + razones
+        E->>R: hash + decisión blocked
+        E-->>C: no ejecutada; el adaptador no se obtiene
+    else SELECT permitido
+        V-->>E: SQL normalizado + objetos + placeholders
+        E->>V: aplicar LIMIT exterior efectivo
+        E->>A: SQL validado, parámetros y límites
+        A->>P: sesión readonly + timeouts
+        P-->>A: columnas y filas acotadas
+        A->>A: rollback + serialización acotada
+        A-->>E: resultado normalizado
+        E->>R: hash + duración + conteo
+        E-->>C: columnas, filas, duración y advertencias
+    end
 ```
 
-Dos refreshes simultáneos de la misma conexión no se solapan; el segundo devuelve
-`already_running`. Distintas conexiones pueden coordinarse independientemente. Si el adaptador
-falla, se registra el intento como `error` sin reemplazar `catalog_snapshots`.
+La allowlist acepta una sola raíz `SELECT`/operación de conjuntos. El análisis del AST bloquea DML,
+DDL, privilegios, `COPY`, comandos administrativos, escritura en CTE, `SELECT INTO`, locking reads,
+funciones peligrosas conocidas y parámetros posicionales. El servicio exige coincidencia exacta de
+placeholders nombrados, reescribe el límite con el AST y solo entonces solicita el adaptador.
 
-## Flujo de búsqueda
+El límite efectivo de filas es el menor entre solicitud, conexión y configuración global. El timeout
+efectivo nunca excede el de la conexión. Un semáforo de proceso limita concurrencia y el adaptador
+limita además bytes serializados. Toda transacción de consulta termina con `ROLLBACK`.
 
-`search_catalog` lee únicamente SQLite. Normaliza los términos, filtra opcionalmente por conexión,
-busca coincidencia AND sobre nombres/comentarios de tablas y columnas, ordena por relevancia y
-añade las FK entrantes/salientes de cada tabla. La respuesta incluye el estado de frescura para que
-el cliente pueda distinguir resultados actuales de un último snapshot obsoleto.
+## Flujo de plan
+
+`explain_query` reutiliza exactamente la validación y los límites anteriores. El cliente entrega un
+`SELECT`, no una sentencia `EXPLAIN`; el adaptador antepone una constante
+`EXPLAIN (FORMAT JSON, ANALYZE FALSE, VERBOSE FALSE, COSTS TRUE)`. PostgreSQL devuelve un plan JSON
+normalizado. Al no usar `ANALYZE`, la consulta explicada no se ejecuta.
+
+## Catálogo
+
+`CatalogService` mantiene snapshots atómicos de metadata. Dos refreshes simultáneos de una misma
+conexión no se solapan y un error conserva el último snapshot válido. `search_catalog` consulta solo
+SQLite, incluye frescura y adjunta relaciones FK relevantes. El detalle operativo permanece en
+[catalog.md](catalog.md).
 
 ## Persistencia y despliegue
 
-SQLite guarda un snapshot JSON por conexión y el estado del último intento en tablas separadas.
-WAL y `busy_timeout` reducen contención; la sustitución del snapshot y el estado exitoso ocurren en
-una transacción. El volumen nombrado `catalog-data` monta `/app/data`, la única ruta escribible del
-runtime aparte de `/tmp`.
+`catalog.db` guarda metadata técnica; `audit.db` guarda eventos de seguridad append-only con hash
+SHA-256 del texto original. Ambos usan WAL y `busy_timeout` y residen en `/app/data`, montado desde el
+volumen nombrado `catalog-data`; ninguna tabla de auditoría contiene SQL, parámetros o valores.
 
 MCP y PostgreSQL comparten la red Docker externa `ai-platform`; Open WebUI puede vivir en otro
-Compose y resolver `data-platform-mcp:8000`. Las imágenes fijadas de Python 3.12 y PostgreSQL
-disponen de ARM64. El diseño de un proceso y SQLite es adecuado para una instancia pequeña de
-Oracle Cloud Free Tier; despliegues con réplicas requerirán persistencia/coordinación compartida.
+Compose y resolver `data-platform-mcp:8000`. Las imágenes fijadas de Python 3.12 y PostgreSQL tienen
+variantes ARM64. Un proceso con SQLite y concurrencia acotada es compatible con una instancia pequeña
+de Oracle Cloud Free Tier; múltiples réplicas requerirían persistencia y coordinación compartidas.
 
 ## Riesgos y límites
 
-- `ai-platform` debe existir antes del arranque.
-- `/health` es liveness y no verifica base ni frescura; usa `get_schema_cache_status`.
-- El scheduler es por proceso. No ejecutar múltiples réplicas contra el mismo archivo SQLite.
-- Comentarios del catálogo son metadata controlada por administradores, pero se tratan como texto
-  no confiable en consumidores futuros.
-- No hay autenticación MCP; la red compartida es una frontera operativa provisional.
-- Las imágenes están fijadas por versión, no por digest; hardening de supply chain queda pendiente.
-- `query_timeout_seconds` y `max_rows` no habilitan ejecución SQL en este sprint.
+- El parser determina estructura, no los efectos internos de toda función definida por el usuario.
+  El administrador debe limitar `EXECUTE` a funciones confiables; el rol/sesión readonly bloquea
+  escrituras PostgreSQL, pero una función privilegiada podría tener efectos externos.
+- La denylist complementa una allowlist estructural y debe revisarse al actualizar PostgreSQL o
+  SQLGlot.
+- El semáforo y el scheduler son por proceso; SQLite no es la opción para múltiples réplicas.
+- `/health` es liveness, no readiness de PostgreSQL ni del catálogo.
+- No hay autenticación MCP; `ai-platform` sigue siendo una frontera operativa provisional.
+- Las imágenes se fijan por versión, no por digest; supply-chain hardening queda pendiente.

@@ -75,6 +75,33 @@ catalog:
         ConnectionsConfigLoader(write_config(tmp_path, source)).load()
 
 
+def test_loader_parses_query_and_audit_policy(tmp_path: Path) -> None:
+    source = (
+        _VALID_YAML
+        + """
+query:
+  global_max_rows: 200
+  max_serialized_bytes: 500000
+  max_concurrent_queries: 2
+audit:
+  enabled: false
+"""
+    )
+
+    config = ConnectionsConfigLoader(write_config(tmp_path, source)).load()
+
+    assert config.query.global_max_rows == 200
+    assert config.query.max_concurrent_queries == 2
+    assert config.audit.enabled is False
+
+
+def test_loader_rejects_invalid_query_policy(tmp_path: Path) -> None:
+    source = _VALID_YAML + "\nquery:\n  global_max_rows: 0\n"
+
+    with pytest.raises(ConfigurationError, match="greater than or equal"):
+        ConnectionsConfigLoader(write_config(tmp_path, source)).load()
+
+
 def test_loader_rejects_duplicate_ids(tmp_path: Path) -> None:
     duplicate = _VALID_YAML + _VALID_YAML.split("connections:\n", maxsplit=1)[1]
 

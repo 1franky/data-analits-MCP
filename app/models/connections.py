@@ -5,6 +5,9 @@ from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.models.audit import AuditConfig
+from app.models.query import QueryPolicyConfig
+
 ConnectionOptionValue = str | int | bool
 
 
@@ -74,6 +77,8 @@ class ConnectionCapabilities(BaseModel):
     describe_table: bool = False
     primary_keys: bool = False
     foreign_keys: bool = False
+    execute_read_query: bool = False
+    explain_query: bool = False
 
 
 class ConnectionConfig(BaseModel):
@@ -155,6 +160,8 @@ class ConnectionsConfig(BaseModel):
 
     connections: tuple[ConnectionConfig, ...]
     catalog: CatalogConfig = Field(default_factory=CatalogConfig)
+    query: QueryPolicyConfig = Field(default_factory=QueryPolicyConfig)
+    audit: AuditConfig = Field(default_factory=AuditConfig)
 
     @field_validator("connections")
     @classmethod

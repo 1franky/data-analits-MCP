@@ -74,13 +74,18 @@ class ConnectionService:
 
     def get_adapter(self, connection_id: str) -> SqlDatabaseAdapter:
         """Resolve a validated connection and create its adapter."""
+        connection = self.get_connection_config(connection_id)
+        password = self._secret_for(connection)
+        return self._adapter_factory.create(connection, password)
+
+    def get_connection_config(self, connection_id: str) -> ConnectionConfig:
+        """Return one enabled internal declaration without resolving its secret."""
         connection = self._connections.get(connection_id)
         if connection is None:
             raise ConnectionNotFoundError(connection_id)
         if not connection.enabled:
             raise ConnectionDisabledError(connection_id)
-        password = self._secret_for(connection)
-        return self._adapter_factory.create(connection, password)
+        return connection
 
     def _secret_for(self, connection: ConnectionConfig) -> SecretStr:
         secret = self._environment.get(connection.password_env)

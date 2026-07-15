@@ -1,11 +1,16 @@
-"""Read-only PostgreSQL connectivity and metadata adapter."""
+"""Read-only PostgreSQL metadata, query and plan adapter."""
 
+import base64
+import json
+from datetime import date, datetime, time
+from decimal import Decimal
 from time import perf_counter
 from typing import Literal, NoReturn, cast
+from uuid import UUID
 
 import psycopg
 from psycopg.conninfo import make_conninfo
-from psycopg.rows import DictRow, dict_row
+from psycopg.rows import DictRow, dict_row, tuple_row
 from pydantic import SecretStr
 
 from app.adapters.base import SqlDatabaseAdapter
@@ -25,6 +30,12 @@ from app.models.connections import (
     TableDescription,
     TableInfo,
 )
+from app.models.query import (
+    AdapterQueryPlan,
+    AdapterQueryResult,
+    QueryParameter,
+    SerializedValue,
+)
 
 _ALLOWED_POSTGRES_OPTIONS = {
     "application_name",
@@ -41,7 +52,7 @@ _ALLOWED_POSTGRES_OPTIONS = {
 
 
 class PostgresAdapter(SqlDatabaseAdapter):
-    """PostgreSQL adapter limited to connectivity and catalog metadata."""
+    """PostgreSQL adapter protected by readonly sessions and bounded operations."""
 
     CAPABILITIES = ConnectionCapabilities(
         query_language=QueryLanguage.SQL,
@@ -51,6 +62,8 @@ class PostgresAdapter(SqlDatabaseAdapter):
         describe_table=True,
         primary_keys=True,
         foreign_keys=True,
+        execute_read_query=True,
+        explain_query=True,
     )
 
     def __init__(self, config: ConnectionConfig, password: SecretStr) -> None:
@@ -173,7 +186,106 @@ class PostgresAdapter(SqlDatabaseAdapter):
             foreign_keys=foreign_keys,
         )
 
-    def _connect_readonly(self) -> psycopg.Connection[DictRow]:
+    def execute_read_query(
+        self,
+        sql: str,
+        parameters: dict[str, QueryParameter] | None,
+        max_rows: int,
+        timeout_seconds: int,
+        max_serialized_bytes: int,
+    ) -> AdapterQueryResult:
+        """Execute prevalidated SQL and serialize a bounded result."""
+        started_at = perf_counter()
+        connection = self._connect_for_query(timeout_seconds)
+        try:
+            cursor = connection.cursor(row_factory=tuple_row)
+            cursor.execute(sql, parameters)
+            columns = tuple(column.name for column in (cursor.description or ()))
+            raw_rows = cursor.fetchmany(max(max_rows, 1))
+            rows, serialized_bytes, bytes_truncated = self._serialize_rows(
+                raw_rows,
+                max_serialized_bytes,
+            )
+            connection.rollback()
+        except psycopg.errors.QueryCanceled:
+            self._rollback_and_close(connection)
+            raise DatabaseOperationError(
+                code="QUERY_TIMEOUT",
+                message="La consulta excedió el timeout permitido.",
+            ) from None
+        except psycopg.Error:
+            self._rollback_and_close(connection)
+            raise DatabaseOperationError(
+                code="DATABASE_QUERY_ERROR",
+                message="PostgreSQL no pudo ejecutar la consulta de lectura.",
+            ) from None
+        connection.close()
+        return AdapterQueryResult(
+            columns=columns,
+            rows=rows,
+            duration_ms=self._elapsed_ms(started_at),
+            truncated=bytes_truncated or len(raw_rows) >= max_rows,
+            serialized_bytes=serialized_bytes,
+        )
+
+    def explain_read_query(
+        self,
+        sql: str,
+        parameters: dict[str, QueryParameter] | None,
+        timeout_seconds: int,
+    ) -> AdapterQueryPlan:
+        """Return PostgreSQL JSON EXPLAIN while explicitly disabling ANALYZE."""
+        started_at = perf_counter()
+        connection = self._connect_for_query(timeout_seconds)
+        explain_sql = "EXPLAIN (FORMAT JSON, ANALYZE FALSE, VERBOSE FALSE, COSTS TRUE) " + sql
+        try:
+            cursor = connection.cursor(row_factory=tuple_row)
+            cursor.execute(explain_sql, parameters)
+            row = cursor.fetchone()
+            if row is None:
+                self._rollback_and_close(connection)
+                raise DatabaseOperationError(
+                    code="QUERY_PLAN_EMPTY",
+                    message="PostgreSQL no devolvió un plan de ejecución.",
+                )
+            plan = row[0]
+            connection.rollback()
+        except psycopg.errors.QueryCanceled:
+            self._rollback_and_close(connection)
+            raise DatabaseOperationError(
+                code="QUERY_TIMEOUT",
+                message="La planificación excedió el timeout permitido.",
+            ) from None
+        except psycopg.Error:
+            self._rollback_and_close(connection)
+            raise DatabaseOperationError(
+                code="DATABASE_EXPLAIN_ERROR",
+                message="PostgreSQL no pudo generar el plan de lectura.",
+            ) from None
+        connection.close()
+        return AdapterQueryPlan(
+            plan=plan,
+            duration_ms=self._elapsed_ms(started_at),
+        )
+
+    def _connect_for_query(self, timeout_seconds: int) -> psycopg.Connection[DictRow]:
+        try:
+            return self._connect_readonly(timeout_seconds)
+        except psycopg.Error:
+            raise DatabaseOperationError(
+                code="DATABASE_CONNECTION_ERROR",
+                message="No fue posible abrir la sesión PostgreSQL de solo lectura.",
+            ) from None
+
+    def _connect_readonly(
+        self,
+        timeout_seconds: int | None = None,
+    ) -> psycopg.Connection[DictRow]:
+        effective_timeout = min(
+            timeout_seconds or self._config.query_timeout_seconds,
+            self._config.query_timeout_seconds,
+        )
+        timeout_ms = effective_timeout * 1_000
         driver_options = {
             key: "1" if value is True else "0" if value is False else str(value)
             for key, value in self._config.options.items()
@@ -185,12 +297,61 @@ class PostgresAdapter(SqlDatabaseAdapter):
             user=self._config.username,
             password=self._password.get_secret_value(),
             connect_timeout=self._config.connect_timeout_seconds,
-            options=f"-c statement_timeout={self._config.query_timeout_seconds * 1000}",
+            options=(
+                f"-c statement_timeout={timeout_ms} "
+                f"-c lock_timeout={timeout_ms} "
+                f"-c idle_in_transaction_session_timeout={timeout_ms}"
+            ),
             **driver_options,
         )
         connection = psycopg.connect(conninfo, row_factory=dict_row)
         connection.read_only = True
         return connection
+
+    @classmethod
+    def _serialize_rows(
+        cls,
+        raw_rows: list[tuple[object, ...]],
+        max_serialized_bytes: int,
+    ) -> tuple[tuple[tuple[SerializedValue, ...], ...], int, bool]:
+        rows: list[tuple[SerializedValue, ...]] = []
+        serialized_bytes = 0
+        truncated = False
+        for raw_row in raw_rows:
+            row = tuple(cls._serialize_value(value) for value in raw_row)
+            row_bytes = len(
+                json.dumps(row, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+            )
+            if serialized_bytes + row_bytes > max_serialized_bytes:
+                truncated = True
+                break
+            rows.append(row)
+            serialized_bytes += row_bytes
+        return tuple(rows), serialized_bytes, truncated
+
+    @staticmethod
+    def _serialize_value(value: object) -> SerializedValue:
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+        if isinstance(value, Decimal):
+            return str(value)
+        if isinstance(value, (datetime, date, time, UUID)):
+            return str(value)
+        if isinstance(value, (bytes, bytearray, memoryview)):
+            encoded = base64.b64encode(bytes(value)).decode("ascii")
+            return f"base64:{encoded}"
+        return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+
+    @staticmethod
+    def _rollback_and_close(connection: psycopg.Connection[DictRow]) -> None:
+        if connection.closed:
+            return
+        try:
+            connection.rollback()
+        except psycopg.Error:
+            connection.close()
+            return
+        connection.close()
 
     @staticmethod
     def _load_columns(

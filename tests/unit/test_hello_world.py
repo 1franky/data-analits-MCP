@@ -29,10 +29,13 @@ async def test_hello_world_is_registered_and_callable_over_mcp() -> None:
 
     assert {tool.name for tool in tools} == {
         "hello_world",
+        "execute_read_query",
+        "explain_query",
         "get_schema_cache_status",
         "list_connections",
         "refresh_schema_cache",
         "search_catalog",
         "test_connection",
+        "validate_sql",
     }
     assert result.data == {"message": "Hello, Open WebUI!"}

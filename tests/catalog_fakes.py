@@ -25,6 +25,7 @@ from app.models.connections import (
     TableDescription,
     TableInfo,
 )
+from app.models.query import AdapterQueryPlan, AdapterQueryResult, QueryParameter
 from app.repositories import SqliteCatalogRepository
 from app.services import CatalogService, ConnectionService
 from tests.factories import make_connection_config
@@ -98,6 +99,24 @@ class CatalogStubAdapter(SqlDatabaseAdapter):
             for description in self._tables
             if description.schema_name == schema and description.name == table
         )
+
+    def execute_read_query(
+        self,
+        sql: str,
+        parameters: dict[str, QueryParameter] | None,
+        max_rows: int,
+        timeout_seconds: int,
+        max_serialized_bytes: int,
+    ) -> AdapterQueryResult:
+        raise AssertionError("catalog tests must not execute business queries")
+
+    def explain_read_query(
+        self,
+        sql: str,
+        parameters: dict[str, QueryParameter] | None,
+        timeout_seconds: int,
+    ) -> AdapterQueryPlan:
+        raise AssertionError("catalog tests must not explain business queries")
 
     @staticmethod
     def _build_tables() -> tuple[TableDescription, ...]:

@@ -1,7 +1,8 @@
 # Herramientas MCP disponibles
 
 El transporte es Streamable HTTP en `/mcp`. Los modelos de respuesta se serializan como datos
-estructurados. Ninguna herramienta de Sprint 2 acepta SQL ni devuelve filas de negocio.
+estructurados. Sprint 3 incorpora una superficie SQL PostgreSQL estrictamente de lectura; no existe
+ninguna herramienta que ejecute escrituras.
 
 ## `hello_world`
 
@@ -39,7 +40,9 @@ Ejemplo conceptual:
       "list_tables": true,
       "describe_table": true,
       "primary_keys": true,
-      "foreign_keys": true
+      "foreign_keys": true,
+      "execute_read_query": true,
+      "explain_query": true
     }
   }
 ]
@@ -100,3 +103,61 @@ Busca sobre el último snapshot válido sin conectarse a la base origen.
 
 La búsqueda vacía, un límite inválido o una conexión inexistente generan errores de dominio
 explícitos. Una búsqueda válida sin snapshot devuelve cero resultados y estado `never`/`stale`.
+
+## `validate_sql`
+
+Parsea una sentencia para el dialecto de la conexión sin ejecutarla.
+
+- Parámetros: `connection_id` y `sql`.
+- Devuelve: `valid`, `read_only`, `executable`, tipo, SQL normalizado, objetos referenciados,
+  placeholders, razones de bloqueo y advertencias.
+- Acepta para ejecución una única raíz `SELECT`, incluidas CTE de lectura y operaciones de conjuntos.
+- DML/DDL válido conserva `normalized_sql`, pero devuelve `executable: false`, una razón estructurada
+  y una advertencia de impacto. Esto permite revisión manual sin habilitar escritura.
+- Registra un evento de auditoría con hash, nunca con el texto SQL.
+
+Ejemplo conceptual de escritura bloqueada:
+
+```json
+{
+  "valid": false,
+  "read_only": false,
+  "executable": false,
+  "statement_type": "DELETE",
+  "normalized_sql": "DELETE FROM ventas",
+  "blocked_reasons": [
+    {"code": "READ_ONLY_STATEMENT_REQUIRED", "message": "..."},
+    {"code": "DML_NOT_ALLOWED", "message": "..."}
+  ],
+  "warnings": [
+    {"code": "WRITE_IMPACT_WARNING", "message": "..."}
+  ]
+}
+```
+
+## `execute_read_query`
+
+Valida de nuevo y ejecuta un único `SELECT` en una sesión PostgreSQL readonly.
+
+- Parámetros requeridos: `connection_id` y `sql`.
+- Parámetros opcionales: `parameters`, `max_rows` y `timeout_seconds`.
+- Los placeholders son nombrados (`%(minimum_id)s`) y las claves deben coincidir exactamente.
+- Devuelve validación, SQL realmente ejecutado, columnas, filas, conteo, límite, truncamiento, bytes
+  serializados, duración, código de error y mensaje.
+- El límite efectivo es el menor entre solicitud, conexión y política global; el timeout solicitado
+  tampoco puede ampliar el de la conexión.
+- Decimal, fecha/hora y UUID se devuelven como texto; binarios con prefijo `base64:`; `NULL` como
+  `null`.
+- Una sentencia bloqueada devuelve `executed: false` y nunca obtiene el adaptador de ejecución.
+
+El parámetro `executed_sql` permite revisar el `LIMIT` exterior aplicado. No debe copiarse como
+evidencia de auditoría: el registro durable usa únicamente su hash de correlación.
+
+## `explain_query`
+
+Valida un `SELECT` y devuelve su plan PostgreSQL JSON sin ejecutar la consulta explicada.
+
+- Parámetros: `connection_id`, `sql`, `parameters` opcional y `timeout_seconds` opcional.
+- Devuelve `explained`, `analyze: false`, validación, SQL limitado, plan, duración y error.
+- El cliente no entrega `EXPLAIN`; la opción fija se añade dentro del adaptador después de validar.
+- DML, DDL, múltiples sentencias y un `EXPLAIN` suministrado directamente se bloquean.

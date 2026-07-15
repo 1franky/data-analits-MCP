@@ -36,13 +36,21 @@ catalog:
   excluded_schemas: [information_schema, pg_catalog]
   include_table_patterns: ["*"]
   exclude_table_patterns: []
+
+query:
+  global_max_rows: 1000
+  max_serialized_bytes: 1000000
+  max_concurrent_queries: 4
+
+audit:
+  enabled: true
 ```
 
 | Campo | Regla |
 |---|---|
 | `id` | Único; minúsculas, números y guiones; 1–63 caracteres. |
 | `name` | Nombre visible no vacío. |
-| `type` | Motor conocido. Solo `postgres` tiene adaptador hasta Sprint 2. |
+| `type` | Motor conocido. Solo `postgres` tiene adaptador hasta Sprint 3. |
 | `host` | DNS/IP visible desde el contenedor. |
 | `port` | Entero entre 1 y 65535. |
 | `database` | Base objetivo. |
@@ -51,8 +59,8 @@ catalog:
 | `readonly` | Debe ser `true` para conexiones habilitadas. |
 | `enabled` | Si es `false`, se lista pero no se puede utilizar. |
 | `connect_timeout_seconds` | 1–300; sí se aplica a la conexión. |
-| `query_timeout_seconds` | 1–3600; `statement_timeout` de la sesión y futuro límite de consultas. |
-| `max_rows` | 1–10000; reservado para ejecución segura futura. |
+| `query_timeout_seconds` | 1–3600; máximo para `statement_timeout`, locks y solicitudes. |
+| `max_rows` | 1–10000; máximo por conexión para resultados de lectura. |
 | `options` | Opciones allowlist específicas del driver. |
 
 Los tipos declarables son `postgres`, `sqlserver`, `mariadb`, `informix`, `mongodb` y `oracle`.
@@ -99,7 +107,7 @@ ruta configurable del contenedor.
 5. Reinicia `data-platform-mcp`.
 6. Invoca `list_connections` y después `test_connection`.
 
-Hasta Sprint 2 solo PostgreSQL puede habilitarse. Otros motores deben permanecer `enabled: false` hasta
+Hasta Sprint 3 solo PostgreSQL puede habilitarse. Otros motores deben permanecer `enabled: false` hasta
 que exista y se pruebe su adaptador.
 
 ## Política del catálogo
@@ -116,6 +124,19 @@ que exista y se pruebe su adaptador.
 
 Los filtros se evalúan antes de describir una tabla. Un cambio en esta política requiere reiniciar
 el servicio y ejecutar un refresh. Consulta [catálogo](catalog.md) para estados y operación.
+
+## Política de consultas y auditoría
+
+| Campo | Regla |
+|---|---|
+| `query.global_max_rows` | 1–10000; tope global que nunca amplía el `max_rows` de una conexión. |
+| `query.max_serialized_bytes` | 1024–100000000; corta la respuesta antes de exceder el presupuesto. |
+| `query.max_concurrent_queries` | 1–64; capacidad simultánea por proceso para execute/explain. |
+| `audit.enabled` | Si es `true`, persiste decisiones de validate/execute/explain sin contenido SQL. |
+
+Una solicitud puede pedir menos filas o menos tiempo, nunca ampliar los límites configurados. Los
+cambios se cargan al reiniciar. `AUDIT_DB_PATH` elige la ruta del SQLite de auditoría y debe apuntar a
+una ubicación escribible; Compose usa `/app/data/audit.db` dentro del volumen persistente.
 
 ## Solución de problemas
 
