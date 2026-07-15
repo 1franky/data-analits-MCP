@@ -23,6 +23,12 @@ Todos los cambios relevantes de este proyecto se documentan en este archivo. El 
 - Laboratorio PostgreSQL 17 con esquema demo, datos y rol `mcp_readonly`.
 - Pruebas unitarias e integración opt-in para configuración, servicios, tools y PostgreSQL.
 - Documentación de conexiones, herramientas MCP y seguridad.
+- Catálogo de metadata persistente en SQLite con snapshots atómicos por conexión.
+- Refresh manual global/individual, refresh periódico no bloqueante y exclusión mutua por conexión.
+- Búsqueda por tablas, columnas y comentarios con filtro de conexión, relaciones FK y estado `stale`.
+- Herramientas MCP `refresh_schema_cache`, `get_schema_cache_status` y `search_catalog`.
+- Filtros configurables de schemas/tablas y comentarios PostgreSQL de tabla/columna.
+- Pruebas de expiración, concurrencia, conservación del último caché válido e integración real.
 
 ### Security
 
@@ -31,6 +37,7 @@ Todos los cambios relevantes de este proyecto se documentan en este archivo. El 
 - Exclusión de `.env` y artefactos locales del contexto Git/Docker.
 - Sesiones PostgreSQL readonly, rol sin escritura/DDL y consultas de metadata parametrizadas.
 - Allowlist de opciones PostgreSQL y rechazo de campos sensibles dentro de `options`.
+- Persistencia exclusiva de metadata técnica; no se consultan ni almacenan filas de negocio.
 
 ### Fixed
 
@@ -39,5 +46,5 @@ Todos los cambios relevantes de este proyecto se documentan en este archivo. El 
 
 ### Not implemented
 
-- Catálogo, RAG, generación, validación o ejecución SQL.
+- RAG, generación, validación o ejecución SQL.
 - Autenticación, auditoría y métricas operativas.

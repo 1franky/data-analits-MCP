@@ -158,6 +158,7 @@ class PostgresAdapter(SqlDatabaseAdapter):
                 columns = self._load_columns(connection, schema, table)
                 if not columns:
                     raise DatabaseObjectNotFoundError(schema, table)
+                description = self._load_table_description(connection, schema, table)
                 primary_key = self._load_primary_key(connection, schema, table)
                 foreign_keys = self._load_foreign_keys(connection, schema, table)
         except psycopg.Error:
@@ -166,6 +167,7 @@ class PostgresAdapter(SqlDatabaseAdapter):
         return TableDescription(
             schema=schema,
             name=table,
+            description=description,
             columns=columns,
             primary_key=primary_key,
             foreign_keys=foreign_keys,
@@ -202,7 +204,8 @@ class PostgresAdapter(SqlDatabaseAdapter):
                 attribute.attname AS column_name,
                 pg_catalog.format_type(attribute.atttypid, attribute.atttypmod) AS data_type,
                 NOT attribute.attnotnull AS nullable,
-                pg_catalog.pg_get_expr(default_value.adbin, default_value.adrelid) AS default_value
+                pg_catalog.pg_get_expr(default_value.adbin, default_value.adrelid) AS default_value,
+                pg_catalog.col_description(relation.oid, attribute.attnum) AS description
             FROM pg_catalog.pg_attribute AS attribute
             INNER JOIN pg_catalog.pg_class AS relation
                 ON relation.oid = attribute.attrelid
@@ -227,6 +230,7 @@ class PostgresAdapter(SqlDatabaseAdapter):
                 data_type=cast(str, row["data_type"]),
                 nullable=cast(bool, row["nullable"]),
                 default=cast(str | None, row["default_value"]),
+                description=cast(str | None, row["description"]),
             )
             for row in rows
         )
@@ -256,6 +260,25 @@ class PostgresAdapter(SqlDatabaseAdapter):
         """
         rows = connection.execute(query, (schema, table)).fetchall()
         return tuple(cast(str, row["column_name"]) for row in rows)
+
+    @staticmethod
+    def _load_table_description(
+        connection: psycopg.Connection[DictRow],
+        schema: str,
+        table: str,
+    ) -> str | None:
+        query = """
+            SELECT pg_catalog.obj_description(relation.oid, 'pg_class') AS description
+            FROM pg_catalog.pg_class AS relation
+            INNER JOIN pg_catalog.pg_namespace AS namespace
+                ON namespace.oid = relation.relnamespace
+            WHERE namespace.nspname = %s
+              AND relation.relname = %s
+              AND relation.relkind IN ('r', 'p')
+              AND has_table_privilege(relation.oid, 'SELECT')
+        """
+        row = connection.execute(query, (schema, table)).fetchone()
+        return None if row is None else cast(str | None, row["description"])
 
     @staticmethod
     def _load_foreign_keys(

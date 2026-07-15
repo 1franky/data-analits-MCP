@@ -58,15 +58,17 @@ docker run --rm \
   data-platform-mcp:test pytest -m integration
 ```
 
-La suite comprueba conectividad, schemas, tablas, columnas, PK, FK y que `mcp_readonly` no puede
-insertar. El valor mostrado coincide con el marcador de `.env.example`; usa el secreto real de tu
-`.env` si lo cambiaste.
+La suite comprueba conectividad, schemas, tablas, comentarios, columnas, PK, FK, refresh/búsqueda
+contra PostgreSQL real y que `mcp_readonly` no puede insertar. El valor mostrado coincide con el
+marcador de `.env.example`; usa el secreto real de tu `.env` si lo cambiaste.
 
 ## Prueba manual del servicio
 
 ```bash
 curl --fail http://127.0.0.1:8000/health
 docker compose --env-file .env.example logs data-platform-mcp postgres-lab
+docker compose --env-file .env.example exec data-platform-mcp \
+  python -c "from app.container import get_catalog_service; print(get_catalog_service().get_cache_status())"
 ```
 
 Desde Open WebUI u otro contenedor conectado a `ai-platform`:
@@ -85,11 +87,12 @@ No uses `localhost` desde Open WebUI: apunta al propio contenedor de Open WebUI.
 - Builders de adaptadores registrados por tipo, sin cadenas `if/elif` centrales.
 - Errores en fronteras de transporte normalizados y sin detalles sensibles.
 - Consultas de catálogos parametrizadas; nunca interpolar nombres recibidos.
+- Snapshots de catálogo metadata-only; un fallo nunca reemplaza el último snapshot válido.
 - No agregar código de sprints futuros.
 
 ## Flujo Git
 
-Sprint 1 se desarrolla en `feature/sprint-1-postgresql`. Antes de solicitar revisión:
+Sprint 2 se desarrolla en `feature/sprint-2-catalog-cache`. Antes de solicitar revisión:
 
 ```bash
 git status --short
@@ -98,4 +101,4 @@ git diff --stat
 git diff
 ```
 
-No se crea un commit hasta recibir aprobación explícita.
+El commit y push se realizan sólo cuando fueron solicitados explícitamente.

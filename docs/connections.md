@@ -27,13 +27,22 @@ connections:
     options:
       application_name: data-platform-mcp
       sslmode: disable
+
+catalog:
+  enabled: true
+  refresh_interval_minutes: 60
+  refresh_on_startup: true
+  stale_after_minutes: 120
+  excluded_schemas: [information_schema, pg_catalog]
+  include_table_patterns: ["*"]
+  exclude_table_patterns: []
 ```
 
 | Campo | Regla |
 |---|---|
 | `id` | Único; minúsculas, números y guiones; 1–63 caracteres. |
 | `name` | Nombre visible no vacío. |
-| `type` | Motor conocido. Solo `postgres` tiene adaptador en Sprint 1. |
+| `type` | Motor conocido. Solo `postgres` tiene adaptador hasta Sprint 2. |
 | `host` | DNS/IP visible desde el contenedor. |
 | `port` | Entero entre 1 y 65535. |
 | `database` | Base objetivo. |
@@ -90,8 +99,23 @@ ruta configurable del contenedor.
 5. Reinicia `data-platform-mcp`.
 6. Invoca `list_connections` y después `test_connection`.
 
-En Sprint 1 solo PostgreSQL puede habilitarse. Otros motores deben permanecer `enabled: false` hasta
+Hasta Sprint 2 solo PostgreSQL puede habilitarse. Otros motores deben permanecer `enabled: false` hasta
 que exista y se pruebe su adaptador.
+
+## Política del catálogo
+
+| Campo | Regla |
+|---|---|
+| `enabled` | Desactiva refresh y scheduler sin afectar las herramientas de conexión. |
+| `refresh_interval_minutes` | Entre 1 y 10080; intervalo fijo del scheduler. |
+| `refresh_on_startup` | Lanza un refresh en background al iniciar. |
+| `stale_after_minutes` | Entre 1 y 43200; edad a partir de la cual un snapshot es obsoleto. |
+| `excluded_schemas` | Nombres exactos, sin blancos ni duplicados. |
+| `include_table_patterns` | Globs sobre `tabla` o `schema.tabla`; requiere al menos uno si está activo. |
+| `exclude_table_patterns` | Globs aplicados después de inclusión. |
+
+Los filtros se evalúan antes de describir una tabla. Un cambio en esta política requiere reiniciar
+el servicio y ejecutar un refresh. Consulta [catálogo](catalog.md) para estados y operación.
 
 ## Solución de problemas
 

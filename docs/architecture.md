@@ -2,18 +2,19 @@
 
 ## Alcance actual
 
-Sprint 1 implementa configuración validada, descubrimiento de conexiones, pruebas de conectividad y
-metadata PostgreSQL. No implementa catálogo persistente, consultas SQL de usuario, generación,
-RAG, auditoría ni integración funcional con Open WebUI.
+Sprint 2 implementa configuración validada, conectividad/metadata PostgreSQL y un catálogo
+persistente consultable. No implementa SQL de usuario, generación, RAG, auditoría ni integración
+funcional con Open WebUI.
 
 ## Principios
 
 1. El núcleo MCP no depende de un proveedor LLM.
-2. Transporte, casos de uso y adaptadores se mantienen separados.
-3. Los secretos solo se resuelven desde el entorno y no forman parte de respuestas.
-4. Una conexión habilitada debe declararse readonly y tener un adaptador registrado.
-5. Cada adaptador publica capacidades explícitas; no hay condicionales centrales por motor.
-6. Generar SQL y ejecutarlo serán casos de uso distintos en sprints posteriores.
+2. Transporte, casos de uso, persistencia y adaptadores se mantienen separados.
+3. Los secretos se resuelven desde el entorno y nunca forman parte del catálogo o respuestas.
+4. Una conexión habilitada debe ser readonly y tener un adaptador registrado.
+5. El catálogo almacena solo metadata técnica; nunca filas de negocio.
+6. Un fallo de refresh conserva el último snapshot válido.
+7. Generar y ejecutar SQL serán casos de uso distintos en sprints posteriores.
 
 ## Componentes implementados
 
@@ -21,98 +22,79 @@ RAG, auditoría ni integración funcional con Open WebUI.
 flowchart LR
     Client["Open WebUI u otro cliente MCP"] -->|"Streamable HTTP /mcp"| Tools["FastMCP tools"]
     Operator["Operador"] -->|"GET /health"| API["FastAPI"]
-    Tools --> Service["ConnectionService"]
-    Service --> Config["Pydantic + connections.yaml"]
-    Service --> Secrets["Variables de entorno"]
-    Service --> Factory["AdapterFactory / registro"]
+    Tools --> CS["ConnectionService"]
+    Tools --> Cat["CatalogService"]
+    Cat --> CS
+    CS --> Config["Pydantic + connections.yaml"]
+    CS --> Factory["AdapterFactory"]
     Factory --> PG["PostgresAdapter"]
-    PG -->|"SELECT constante y catálogos internos"| Lab["PostgreSQL / mcp_readonly"]
-    API --> ASGI["Aplicación ASGI / Uvicorn"]
+    PG -->|"catálogos internos readonly"| DB["PostgreSQL / mcp_readonly"]
+    Cat --> Repo["CatalogRepository / SQLite"]
+    Scheduler["CatalogScheduler"] --> Cat
+    API --> ASGI["ASGI / Uvicorn"]
     Tools --> ASGI
 ```
 
-- `app/config`: carga segura de YAML y normalización de errores.
-- `app/models`: declaraciones, capacidades y resultados tipados.
-- `app/services`: acceso a declaraciones, resolución de secretos y orquestación.
+- `app/config`: carga de YAML y normalización de errores.
+- `app/models`: conexiones, snapshots, refresh, búsqueda y relaciones tipadas.
+- `app/services`: resolución de conexiones y orquestación del catálogo.
 - `app/adapters`: contrato SQL, fábrica por registro y PostgreSQL.
-- `app/tools`: contratos MCP del sprint.
-- `app/container.py`: composition root y caché de configuración por proceso.
-- `database/init`: esquema/datos de laboratorio y rol de solo lectura.
+- `app/repositories`: contrato de persistencia e implementación SQLite.
+- `app/scheduler`: actualización periódica en un worker thread sin bloquear ASGI.
+- `app/tools`: seis contratos MCP disponibles en Sprint 2.
+- `app/container.py`: composition root y dependencias cacheadas por proceso.
 
-El lifespan de FastAPI valida el archivo, adaptadores y secretos antes de aceptar tráfico. Modificar
-el YAML no requiere reconstruir la imagen, pero sí reiniciar el proceso para invalidar la caché.
+El lifespan valida conexiones/secretos, inicializa SQLite y arranca el scheduler. Al apagar, espera
+la actualización en curso antes de cerrar.
 
-## Flujo de `list_connections`
-
-```mermaid
-sequenceDiagram
-    participant C as Cliente MCP
-    participant T as Tool
-    participant S as ConnectionService
-    participant F as AdapterFactory
-    C->>T: list_connections
-    T->>S: list_connections()
-    S->>F: capabilities_for(type)
-    F-->>S: capacidades o null
-    S-->>T: modelos públicos ordenados
-    T-->>C: ID, nombre, tipo, base, estado, readonly, capacidades
-```
-
-Este flujo no resuelve contraseñas y excluye host, usuario, `password_env` y cadenas de conexión.
-
-## Flujo de `test_connection`
+## Flujo de refresh
 
 ```mermaid
 sequenceDiagram
-    participant C as Cliente MCP
-    participant S as ConnectionService
+    participant C as Cliente o Scheduler
+    participant S as CatalogService
     participant A as PostgresAdapter
-    participant P as PostgreSQL
-    C->>S: test_connection(connection_id)
-    S->>S: existencia, enabled, secreto
-    S->>A: construir por registro
-    A->>P: conectar con timeout + sesión readonly
-    A->>P: SELECT 1
-    P-->>A: resultado
-    A-->>C: éxito, latencia, código y mensaje normalizados
+    participant R as SQLiteRepository
+    C->>S: refresh(connection_id)
+    S->>S: lock no bloqueante por conexión
+    S->>R: estado refreshing
+    S->>A: schemas, tablas y describe_table
+    A-->>S: metadata, comentarios, PK y FK
+    S->>S: filtros + hash SHA-256 canónico
+    S->>R: snapshot + estado success (transacción)
+    R-->>C: fecha, hash y conteos
 ```
 
-Los errores de driver no cruzan el límite MCP y no incluyen secretos ni detalles de conexión.
+Dos refreshes simultáneos de la misma conexión no se solapan; el segundo devuelve
+`already_running`. Distintas conexiones pueden coordinarse independientemente. Si el adaptador
+falla, se registra el intento como `error` sin reemplazar `catalog_snapshots`.
 
-## Contrato de metadata PostgreSQL
+## Flujo de búsqueda
 
-`PostgresAdapter` implementa:
+`search_catalog` lee únicamente SQLite. Normaliza los términos, filtra opcionalmente por conexión,
+busca coincidencia AND sobre nombres/comentarios de tablas y columnas, ordena por relevancia y
+añade las FK entrantes/salientes de cada tabla. La respuesta incluye el estado de frescura para que
+el cliente pueda distinguir resultados actuales de un último snapshot obsoleto.
 
-- `list_schemas`: schemas visibles no internos.
-- `list_tables`: tablas/particiones visibles, con filtro opcional de schema.
-- `describe_table`: columnas, defaults, PK y FK, incluso claves compuestas.
+## Persistencia y despliegue
 
-Las sentencias provienen exclusivamente del código; schema y tabla son parámetros del driver. El
-adaptador no acepta ni ejecuta SQL enviado por usuarios. Las tools de metadata se incorporarán en
-Sprint 4, después del catálogo de Sprint 2.
+SQLite guarda un snapshot JSON por conexión y el estado del último intento en tablas separadas.
+WAL y `busy_timeout` reducen contención; la sustitución del snapshot y el estado exitoso ocurren en
+una transacción. El volumen nombrado `catalog-data` monta `/app/data`, la única ruta escribible del
+runtime aparte de `/tmp`.
 
-## Despliegue
-
-`data-platform-mcp` y `postgres-lab` comparten la red Docker externa `ai-platform`. Open WebUI en
-otro Compose puede resolver `data-platform-mcp:8000` porque comparte esa red. Ambos puertos están
-limitados a loopback del anfitrión por defecto.
-
-El runtime MCP usa Python 3.12, usuario no-root, filesystem de solo lectura y un único worker. El
-laboratorio deriva de `postgres:17.10-bookworm`, incorpora sus scripts de inicialización en una
-etapa Docker reproducible y usa un volumen nombrado. Evitar un bind mount de scripts también elimina
-diferencias entre VirtioFS de Docker Desktop y volúmenes Linux. Ambas imágenes disponen de ARM64;
-el diseño es compatible con Oracle Cloud Free Tier, aunque límites de recursos y backup deben
-definirse según el despliegue real.
+MCP y PostgreSQL comparten la red Docker externa `ai-platform`; Open WebUI puede vivir en otro
+Compose y resolver `data-platform-mcp:8000`. Las imágenes fijadas de Python 3.12 y PostgreSQL
+disponen de ARM64. El diseño de un proceso y SQLite es adecuado para una instancia pequeña de
+Oracle Cloud Free Tier; despliegues con réplicas requerirán persistencia/coordinación compartida.
 
 ## Riesgos y límites
 
 - `ai-platform` debe existir antes del arranque.
-- El cambio de contraseña del laboratorio solo se aplica durante la inicialización de un volumen
-  nuevo; para regenerarlo usa `docker compose down --volumes`.
-- `/health` es liveness, no verifica PostgreSQL; el estado de una conexión se consulta por MCP.
-- No hay autenticación MCP en este sprint: la red compartida es una frontera operativa.
-- `sslmode: disable` existe solo en el ejemplo de laboratorio. Conexiones remotas deben configurar
-  TLS según la política del servidor.
-- `query_timeout_seconds` y `max_rows` se validan para contratos futuros, pero no hay ejecución de
-  consultas de usuario en Sprint 1.
-- Las imágenes están fijadas por versión, no por digest; supply-chain hardening queda para Sprint 10.
+- `/health` es liveness y no verifica base ni frescura; usa `get_schema_cache_status`.
+- El scheduler es por proceso. No ejecutar múltiples réplicas contra el mismo archivo SQLite.
+- Comentarios del catálogo son metadata controlada por administradores, pero se tratan como texto
+  no confiable en consumidores futuros.
+- No hay autenticación MCP; la red compartida es una frontera operativa provisional.
+- Las imágenes están fijadas por versión, no por digest; hardening de supply chain queda pendiente.
+- `query_timeout_seconds` y `max_rows` no habilitan ejecución SQL en este sprint.

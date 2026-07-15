@@ -2,12 +2,12 @@
 
 Data Platform MCP es un servicio independiente del proveedor de LLM para explorar fuentes de datos
 desde clientes compatibles con Model Context Protocol (MCP), incluido Open WebUI. El proyecto se
-construye por sprints y actualmente implementa el **Sprint 1**: configuración de conexiones por
-YAML, herramientas de descubrimiento/conectividad y un adaptador PostgreSQL de metadatos.
+construye por sprints y actualmente implementa el **Sprint 2**: configuración de conexiones,
+adaptador PostgreSQL de metadatos y catálogo persistente con actualización manual/periódica.
 
-No existe todavía ejecución de SQL de usuario, catálogo persistente, generación de consultas, RAG
-ni auditoría. El adaptador solo ejecuta consultas constantes o de catálogos internos controladas por
-la aplicación.
+No existe todavía ejecución de SQL de usuario, generación de consultas, RAG ni auditoría. El
+adaptador solo ejecuta consultas constantes o de catálogos internos controladas por la aplicación;
+el catálogo nunca almacena filas de negocio.
 
 ## Arquitectura actual
 
@@ -18,11 +18,14 @@ Un proceso ASGI ejecutado por Uvicorn expone:
 - `hello_world`: herramienta de verificación básica.
 - `list_connections`: declaraciones y capacidades sin host, usuario ni secretos.
 - `test_connection`: prueba acotada de conectividad con latencia y error normalizado.
+- `refresh_schema_cache`: actualiza la metadata de una conexión o de todas las habilitadas.
+- `get_schema_cache_status`: informa estado, fecha, error y obsolescencia de cada snapshot.
+- `search_catalog`: busca tablas, columnas y descripciones, e incluye relaciones FK relevantes.
 
 La configuración pasa por Pydantic, el servicio resuelve secretos desde el entorno y una fábrica por
-registro crea el adaptador. `PostgresAdapter` puede probar conectividad y obtener schemas, tablas,
-columnas, claves primarias y foráneas; esas operaciones de metadata todavía no se exponen como tools.
-Consulta [la arquitectura](docs/architecture.md) para los límites de las capas.
+registro crea el adaptador. `CatalogService` coordina snapshots atómicos guardados en SQLite,
+exclusión mutua por conexión y consultas sin tocar la base origen. Consulta
+[la arquitectura](docs/architecture.md) y [la operación del catálogo](docs/catalog.md).
 
 ## Requisitos
 
@@ -52,7 +55,7 @@ Respuesta esperada:
 {
   "status": "ok",
   "service": "data-platform-mcp",
-  "version": "0.2.0"
+  "version": "0.3.0"
 }
 ```
 
@@ -103,6 +106,11 @@ opciones reservadas, conexiones habilitadas sin modo readonly, motores sin adapt
 ausentes detienen el arranque con un error claro. La referencia completa está en
 [conexiones](docs/connections.md).
 
+La sección raíz `catalog` controla si el caché está activo, el refresh al arrancar, el intervalo,
+la edad para marcarlo obsoleto y los filtros de schemas/tablas. El ejemplo usa 60 minutos entre
+actualizaciones y marca el snapshot como `stale` a partir de 120 minutos. SQLite se persiste en el
+volumen nombrado `catalog-data`; `docker compose down --volumes` también lo elimina.
+
 Variables Compose incluidas en `.env.example`:
 
 | Variable | Predeterminado de ejemplo | Uso |
@@ -111,7 +119,8 @@ Variables Compose incluidas en `.env.example`:
 | `MCP_BIND_ADDRESS` | `127.0.0.1` | Interfaz local del MCP/API. |
 | `MCP_PORT` | `8000` | Puerto local del MCP/API. |
 | `LOG_LEVEL` | `info` | Nivel de log de Uvicorn. |
-| `IMAGE_TAG` | `0.2.0` | Etiqueta local de la imagen. |
+| `IMAGE_TAG` | `0.3.0` | Etiqueta local de la imagen. |
+| `CATALOG_DB_PATH` | `/app/data/catalog.db` | SQLite persistente de metadata técnica. |
 | `POSTGRES_IMAGE_TAG` | `17.10` | Etiqueta local del laboratorio PostgreSQL. |
 | `POSTGRES_LAB_ADMIN_PASSWORD` | valor local no secreto | Administrador del laboratorio. |
 | `POSTGRES_DEMO_PASSWORD` | valor local no secreto | Rol `mcp_readonly` y adaptador. |
@@ -150,6 +159,7 @@ Las pruebas de integración requieren el laboratorio y se habilitan explícitame
 - El rol tiene `SELECT` y `default_transaction_read_only=on`; no recibe escritura ni DDL.
 - El adaptador fuerza además sesiones de solo lectura.
 - Las consultas de metadata están definidas por la aplicación y sus filtros usan parámetros.
+- El caché persiste únicamente schemas, tablas, columnas, comentarios, PK y FK.
 - Contraseñas y cadenas completas no aparecen en herramientas ni errores normalizados.
 - El runtime usa UID/GID `10001`, raíz de solo lectura, sin capabilities y sin privilegios nuevos.
 - Los puertos se publican solo en loopback por defecto.
@@ -161,7 +171,7 @@ servicio directamente a Internet. Consulta [seguridad](docs/security.md).
 
 | Motor | Estado |
 |---|---|
-| PostgreSQL | Sprint 1: conectividad y metadata implementadas; ejecución SQL de usuario no disponible. |
+| PostgreSQL | Sprint 2: conectividad, metadata y catálogo implementados; ejecución SQL no disponible. |
 | SQL Server | Planificado para Sprint 9. |
 | MariaDB/MySQL | Planificado para Sprint 9. |
 | Informix | Planificado para Sprint 9; driver ARM64 por validar. |
@@ -170,6 +180,6 @@ servicio directamente a Internet. Consulta [seguridad](docs/security.md).
 
 ## Roadmap
 
-El plan se mantiene en [TASKS.md](TASKS.md). El siguiente hito, pendiente de aprobación del Sprint
-1, es Sprint 2: catálogo y caché de schemas. Después siguen validación/ejecución SQL segura,
-contratos MCP de metadata, generación, objetos, RAG, Open WebUI, motores adicionales y hardening.
+El plan se mantiene en [TASKS.md](TASKS.md). El siguiente hito, que no se iniciará sin aprobación,
+es Sprint 3: validación y ejecución SQL segura. Después siguen contratos MCP de metadata,
+generación, objetos, RAG, Open WebUI, motores adicionales y hardening.

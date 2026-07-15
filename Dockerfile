@@ -26,7 +26,9 @@ FROM base AS runtime
 
 RUN groupadd --gid 10001 app \
     && useradd --uid 10001 --gid app --no-create-home --home-dir /app \
-        --shell /usr/sbin/nologin app
+        --shell /usr/sbin/nologin app \
+    && mkdir -p /app/data \
+    && chown app:app /app/data
 
 USER app
 
