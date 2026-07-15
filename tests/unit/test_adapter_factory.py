@@ -15,6 +15,7 @@ from app.models.connections import (
     TableDescription,
     TableInfo,
 )
+from app.models.query import AdapterQueryPlan, AdapterQueryResult, QueryParameter
 from tests.factories import make_connection_config
 
 _CAPABILITIES = ConnectionCapabilities(query_language=QueryLanguage.SQL)
@@ -53,6 +54,30 @@ class StubAdapter(SqlDatabaseAdapter):
             primary_key=(),
             foreign_keys=(),
         )
+
+    def execute_read_query(
+        self,
+        sql: str,
+        parameters: dict[str, QueryParameter] | None,
+        max_rows: int,
+        timeout_seconds: int,
+        max_serialized_bytes: int,
+    ) -> AdapterQueryResult:
+        return AdapterQueryResult(
+            columns=(),
+            rows=(),
+            duration_ms=1.0,
+            truncated=False,
+            serialized_bytes=0,
+        )
+
+    def explain_read_query(
+        self,
+        sql: str,
+        parameters: dict[str, QueryParameter] | None,
+        timeout_seconds: int,
+    ) -> AdapterQueryPlan:
+        return AdapterQueryPlan(plan=[], duration_ms=1.0)
 
 
 def build_stub_adapter(config: ConnectionConfig, password: SecretStr) -> SqlDatabaseAdapter:

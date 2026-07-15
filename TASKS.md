@@ -2,7 +2,7 @@
 
 Estados permitidos: `TODO`, `IN_PROGRESS`, `BLOCKED`, `DONE`.
 
-Sprint 2 está autorizado en la rama actual. No se implementan historias de Sprint 3 ni posteriores
+Sprint 3 está autorizado en la rama actual. No se implementan historias de Sprint 4 ni posteriores
 hasta completar la validación y recibir aprobación explícita.
 
 ## Sprint 0 — Descubrimiento, arquitectura y bootstrap
@@ -34,10 +34,10 @@ hasta completar la validación y recibir aprobación explícita.
 
 | Historia | Estado | Dependencias | Archivos previstos | Pruebas requeridas | Criterios de aceptación | Bloqueos |
 |---|---|---|---|---|---|---|
-| HU-301 Validar SQL | TODO | Sprint 1, parser seleccionado | `app/security/`, servicio/modelos de validación | DML, DDL, multi-sentencia, CTE de escritura, comentarios | Parser real; clasificación y razones estructuradas | Seleccionar/versionar parser |
-| HU-302 Ejecutar SELECT | TODO | HU-301, HU-104 | Servicio de ejecución y auditoría | Read-only, timeout, límites, serialización | Solo SQL validado; resultado normalizado y auditado | Requiere usuario DB read-only |
-| HU-303 Generar escritura sin ejecutarla | TODO | HU-301 | Caso de uso de generación | Demostrar que DML/DDL nunca llega al adaptador | SQL marcado no ejecutable con impacto | Generación LLM se define después |
-| HU-304 Explicar plan | TODO | HU-301, HU-104 | Servicio/tool de explain | Solo lectura; `ANALYZE` ausente | Plan textual/normalizado seguro | Espera adaptador y validador |
+| HU-301 Validar SQL | DONE | Sprint 1, SQLGlot 30.x | `app/security/`, servicio/modelos de validación | DML, DDL, multi-sentencia, CTE de escritura, comentarios | Parser real; clasificación y razones estructuradas | Ninguno |
+| HU-302 Ejecutar SELECT | DONE | HU-301, HU-104 | Servicio de ejecución y auditoría | Read-only, timeout, límites, serialización | Solo SQL validado; resultado normalizado y auditado | Ninguno |
+| HU-303 Generar escritura sin ejecutarla | DONE | HU-301 | Validación de sentencias suministradas | Demostrar que DML/DDL nunca llega al adaptador | SQL normalizado no ejecutable con advertencia de impacto | Generación en lenguaje natural permanece en Sprint 5 |
+| HU-304 Explicar plan | DONE | HU-301, HU-104 | Servicio/tool de explain | Solo lectura; `ANALYZE` ausente | Plan JSON normalizado y seguro | Ninguno |
 
 ## Sprint 4 — Herramientas MCP completas
 
@@ -160,4 +160,27 @@ persistencia: PASS — volumen catalog-data escribible sobre raíz read-only
 runtime user: PASS — uid=10001(app), gid=10001(app)
 runtime restrictions: PASS — raíz read-only, cap_drop ALL, no-new-privileges, ai-platform
 runtime platform: PASS — MCP y laboratorio linux/arm64
+```
+
+## Evidencia de validación de Sprint 3
+
+Validación ejecutada el 2026-07-14 sobre Docker Desktop ARM64:
+
+```text
+Python del target test: PASS — Python 3.12.13, linux/arm64
+pytest unitario: PASS — 80 passed, 11 integration deselected in 5.45s
+pytest integración PostgreSQL: PASS — 11 passed, 80 deselected in 5.31s
+ruff check: PASS — All checks passed
+ruff format --check: PASS — 68 files already formatted
+mypy app tests: PASS — no issues found in 68 source files
+docker compose config --quiet: PASS
+docker build --target test: PASS — image sha256:45c84310a6bc...
+docker compose build/up: PASS — MCP sha256:dd014f539e93..., ambos servicios healthy
+seguridad SQL: PASS — DML, DDL, multi-sentencia, CTE de escritura y funciones peligrosas bloqueadas
+aislamiento: PASS — sentencias bloqueadas no invocan el adaptador y no alteran filas PostgreSQL
+ejecución: PASS — JOIN, CTE, agregación, ventana, parámetros, límites y serialización reales
+EXPLAIN: PASS — plan JSON real con ANALYZE desactivado
+auditoría: PASS — hash/decisión persistidos; SQL, parámetros y filas ausentes de SQLite
+runtime restrictions: PASS — UID 10001, raíz read-only, cap_drop ALL, no-new-privileges
+runtime platform: PASS — MCP y laboratorio linux/arm64 sobre red externa ai-platform
 ```

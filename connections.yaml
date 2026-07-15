@@ -27,3 +27,11 @@ catalog:
   include_table_patterns:
     - "*"
   exclude_table_patterns: []
+
+query:
+  global_max_rows: 1000
+  max_serialized_bytes: 1000000
+  max_concurrent_queries: 4
+
+audit:
+  enabled: true

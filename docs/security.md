@@ -1,56 +1,83 @@
 # Seguridad
 
-## Alcance y amenazas de Sprint 2
+## Alcance y amenazas de Sprint 3
 
-Los activos principales son credenciales de base de datos, metadata técnica y disponibilidad del
-servicio. Las amenazas relevantes son exposición de secretos, abuso de una conexión privilegiada,
-inyección en consultas de metadata, almacenamiento accidental de filas, escritura accidental y
-exposición del MCP fuera de la red de confianza.
+Los activos principales son credenciales, datos consultados, metadata, auditoría y disponibilidad.
+Las amenazas cubiertas incluyen exposición de secretos, SQL de escritura, bypass mediante múltiples
+sentencias o CTE, funciones con efectos secundarios, consultas costosas, respuestas excesivas,
+inyección en parámetros y persistencia accidental de datos sensibles.
 
 ## Capas implementadas
 
 1. YAML sin contraseñas; secretos resueltos desde variables de entorno.
 2. Modelos públicos que excluyen host, usuario, `password_env` y secretos.
 3. Errores de base normalizados sin texto crudo del driver.
-4. Conexiones habilitadas obligatoriamente declaradas readonly.
-5. Rol PostgreSQL dedicado con `SELECT`, sin escritura/DDL y transacciones readonly por defecto.
-6. Sesión del adaptador marcada readonly además de los permisos del rol.
-7. SQL de metadata controlado por la aplicación y parámetros para valores variables.
-8. Timeouts de conexión validados y aplicados.
-9. Contenedor MCP no-root, raíz readonly, sin capabilities y `no-new-privileges`.
-10. Publicación de puertos en loopback por defecto.
-11. SQLite contiene sólo schemas, tablas, columnas, comentarios, PK, FK, hashes y estados.
-12. Filtros de catálogo aplicados antes de describir tablas; escritura limitada al volumen propio.
+4. Conexiones habilitadas obligatoriamente readonly.
+5. Rol PostgreSQL dedicado con `SELECT`, sin escritura/DDL y readonly por defecto.
+6. Cada sesión del adaptador se marca readonly y toda consulta termina con `ROLLBACK`.
+7. SQLGlot parsea el dialecto PostgreSQL; la política opera sobre AST, no sobre regex.
+8. Allowlist de una sentencia `SELECT`; bloqueo de DML, DDL, privilegios, `COPY`, comandos,
+   múltiples sentencias, escritura en CTE, `SELECT INTO` y locking reads.
+9. Denylist de funciones PostgreSQL con efectos o abuso conocidos, incluidas `pg_sleep`, secuencias,
+   archivos, notificaciones, WAL/replicación, large objects, `dblink_*` y advisory locks.
+10. Parámetros exclusivamente nombrados y coincidencia exacta de claves; Psycopg recibe valores
+    separados del SQL.
+11. Límites mínimos entre solicitud/conexión/política para timeout y filas; tope de bytes y semáforo
+    de concurrencia por proceso.
+12. `EXPLAIN` constante en formato JSON con `ANALYZE FALSE`.
+13. Auditoría append-only con hash SHA-256, tipo, decisión, razones, duración y conteo; sin SQL,
+    parámetros ni resultados.
+14. Contenedor no-root, raíz readonly, sin capabilities, `no-new-privileges` y puertos en loopback.
 
 ## Operaciones permitidas
 
-- Health check del proceso.
-- Listar declaraciones y capacidades no sensibles.
-- Probar conectividad con `SELECT 1`.
-- Desde el adaptador interno: leer catálogos para schemas, tablas, columnas, PK y FK.
-- Actualizar, consultar estado y buscar dentro del caché técnico persistente.
+- Health check, conexiones y metadata de sprints anteriores.
+- Validar cualquier texto SQL para obtener clasificación y razones.
+- Ejecutar un único `SELECT` PostgreSQL validado y acotado.
+- Generar el plan JSON de ese `SELECT` sin `ANALYZE`.
+- Actualizar y buscar el caché técnico persistente.
 
-## Operaciones no disponibles
+## Operaciones bloqueadas
 
-- Ejecutar SQL proporcionado por usuarios o LLM.
-- INSERT, UPDATE, DELETE, DDL o llamadas a procedimientos.
-- Leer filas de negocio mediante herramientas MCP.
-- RAG, generación, validación o ejecución SQL.
+- `INSERT`, `UPDATE`, `DELETE`, `MERGE`, `CREATE`, `ALTER`, `DROP`, `TRUNCATE` y `COPY`.
+- Escrituras ocultas dentro de CTE y múltiples sentencias.
+- `SELECT INTO`, `FOR UPDATE`/locking reads, comandos administrativos y cambios de privilegios.
+- Placeholders posicionales, parámetros faltantes o adicionales.
+- `EXPLAIN` suministrado como SQL de usuario; solo se acepta el `SELECT` subyacente.
+- Procedimientos, RAG, generación LLM y cualquier ruta de confirmación de escritura.
 
-No existe un endpoint oculto ni una función de confirmación que habilite escritura.
+Una escritura válida sí puede devolverse normalizada por `validate_sql` para revisión manual, pero
+queda marcada `executable: false`, incluye advertencia de impacto y nunca llega al método ejecutor
+del adaptador. Las pruebas usan un adaptador espía y verifican además que las filas reales no cambian.
+
+## Auditoría y privacidad
+
+Cada validación, ejecución o explicación crea un evento cuando `audit.enabled` es verdadero. El hash
+permite correlacionar la misma entrada sin conservarla. No es un mecanismo de anonimización para
+entradas de baja entropía: quienes tengan acceso al archivo podrían probar hashes candidatos, por lo
+que el volumen debe protegerse como dato operativo sensible.
+
+`audit.db` comparte el volumen `/app/data` con el catálogo. La primera implementación es apta para
+una sola réplica. Retención, exportación, consulta administrativa y firmas inmutables pertenecen al
+hardening futuro; no existe aún una herramienta MCP para leer auditoría.
 
 ## Responsabilidades del administrador
 
-- Sustituir los marcadores de `.env.example` y proteger el archivo `.env`.
-- Usar roles readonly creados fuera del MCP, nunca administradores.
+- Sustituir los marcadores de `.env.example` y proteger `.env` y el volumen de datos.
+- Usar roles readonly externos, nunca administradores; retirar `EXECUTE` sobre funciones no
+  confiables y evitar funciones `SECURITY DEFINER` accesibles al rol MCP.
 - Configurar TLS para bases remotas.
 - Restringir membresía de `ai-platform` y no publicar MCP/PostgreSQL a Internet.
-- Rotar secretos y reiniciar el servicio de forma controlada.
-- Mantener imágenes/dependencias actualizadas después de ejecutar toda la suite.
+- Revisar la política al actualizar PostgreSQL/SQLGlot y ejecutar pruebas de ataques e integración.
+- Dimensionar filas, bytes, timeout y concurrencia según memoria/CPU de Oracle Cloud Free Tier.
 
 ## Limitaciones conocidas
 
-Sprint 2 no incorpora autenticación/autorización MCP, rate limiting, auditoría, logs estructurados,
-readiness de dependencias ni gestión nativa de secretos. La red Docker compartida es la frontera de
-confianza provisional. Estas limitaciones impiden considerar el servicio listo para exposición
-pública.
+Un parser conoce la estructura de una llamada, no la implementación de cada función definida por el
+usuario. La sesión readonly impide escrituras PostgreSQL ordinarias, pero una función autorizada puede
+tener efectos externos; los privilegios de función son una frontera imprescindible. La denylist es
+defensa adicional, no prueba formal de ausencia de efectos.
+
+Sprint 3 no incorpora autenticación/autorización MCP, rate limiting distribuido, pool de conexiones,
+logs estructurados, readiness, rotación/retención de auditoría ni gestión nativa de secretos. La red
+Docker compartida sigue siendo una frontera de confianza provisional.

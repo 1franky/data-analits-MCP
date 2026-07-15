@@ -2,12 +2,13 @@
 
 Data Platform MCP es un servicio independiente del proveedor de LLM para explorar fuentes de datos
 desde clientes compatibles con Model Context Protocol (MCP), incluido Open WebUI. El proyecto se
-construye por sprints y actualmente implementa el **Sprint 2**: configuración de conexiones,
-adaptador PostgreSQL de metadatos y catálogo persistente con actualización manual/periódica.
+construye por sprints y actualmente implementa el **Sprint 3**: validación SQL mediante AST,
+ejecución PostgreSQL exclusivamente de lectura, planes seguros y auditoría inicial, además de la
+configuración y el catálogo de los sprints anteriores.
 
-No existe todavía ejecución de SQL de usuario, generación de consultas, RAG ni auditoría. El
-adaptador solo ejecuta consultas constantes o de catálogos internos controladas por la aplicación;
-el catálogo nunca almacena filas de negocio.
+No existe todavía generación de consultas desde lenguaje natural, RAG ni ejecución de escritura.
+El catálogo nunca almacena filas de negocio y la auditoría guarda metadatos de seguridad, no el SQL,
+los parámetros ni los valores devueltos.
 
 ## Arquitectura actual
 
@@ -21,11 +22,15 @@ Un proceso ASGI ejecutado por Uvicorn expone:
 - `refresh_schema_cache`: actualiza la metadata de una conexión o de todas las habilitadas.
 - `get_schema_cache_status`: informa estado, fecha, error y obsolescencia de cada snapshot.
 - `search_catalog`: busca tablas, columnas y descripciones, e incluye relaciones FK relevantes.
+- `validate_sql`: parsea, clasifica y explica por qué una sentencia puede o no ejecutarse.
+- `execute_read_query`: ejecuta un único `SELECT` validado con límites de tiempo, filas y bytes.
+- `explain_query`: devuelve el plan JSON de un `SELECT` sin utilizar `ANALYZE`.
 
 La configuración pasa por Pydantic, el servicio resuelve secretos desde el entorno y una fábrica por
-registro crea el adaptador. `CatalogService` coordina snapshots atómicos guardados en SQLite,
-exclusión mutua por conexión y consultas sin tocar la base origen. Consulta
-[la arquitectura](docs/architecture.md) y [la operación del catálogo](docs/catalog.md).
+registro crea el adaptador. `CatalogService` coordina snapshots atómicos guardados en SQLite;
+`QueryValidationService` aplica una política AST por dialecto y `QueryExecutionService` es la única
+entrada a consultas de usuario. Consulta [la arquitectura](docs/architecture.md),
+[la seguridad SQL](docs/query-security.md) y [la operación del catálogo](docs/catalog.md).
 
 ## Requisitos
 
@@ -55,7 +60,7 @@ Respuesta esperada:
 {
   "status": "ok",
   "service": "data-platform-mcp",
-  "version": "0.3.0"
+  "version": "0.4.0"
 }
 ```
 
@@ -111,6 +116,22 @@ la edad para marcarlo obsoleto y los filtros de schemas/tablas. El ejemplo usa 6
 actualizaciones y marca el snapshot como `stale` a partir de 120 minutos. SQLite se persiste en el
 volumen nombrado `catalog-data`; `docker compose down --volumes` también lo elimina.
 
+Las secciones `query` y `audit` controlan los límites globales y la bitácora de seguridad:
+
+```yaml
+query:
+  global_max_rows: 1000
+  max_serialized_bytes: 1000000
+  max_concurrent_queries: 4
+
+audit:
+  enabled: true
+```
+
+La ejecución utiliza el menor límite entre la solicitud, la conexión y la política global. Los
+placeholders deben ser nombrados, por ejemplo `%(cliente_id)s`, y el diccionario de parámetros debe
+coincidir exactamente. La auditoría se persiste en `/app/data/audit.db` dentro del mismo volumen.
+
 Variables Compose incluidas en `.env.example`:
 
 | Variable | Predeterminado de ejemplo | Uso |
@@ -119,8 +140,9 @@ Variables Compose incluidas en `.env.example`:
 | `MCP_BIND_ADDRESS` | `127.0.0.1` | Interfaz local del MCP/API. |
 | `MCP_PORT` | `8000` | Puerto local del MCP/API. |
 | `LOG_LEVEL` | `info` | Nivel de log de Uvicorn. |
-| `IMAGE_TAG` | `0.3.0` | Etiqueta local de la imagen. |
+| `IMAGE_TAG` | `0.4.0` | Etiqueta local de la imagen. |
 | `CATALOG_DB_PATH` | `/app/data/catalog.db` | SQLite persistente de metadata técnica. |
+| `AUDIT_DB_PATH` | `/app/data/audit.db` | SQLite persistente de eventos SQL sin contenido sensible. |
 | `POSTGRES_IMAGE_TAG` | `17.10` | Etiqueta local del laboratorio PostgreSQL. |
 | `POSTGRES_LAB_ADMIN_PASSWORD` | valor local no secreto | Administrador del laboratorio. |
 | `POSTGRES_DEMO_PASSWORD` | valor local no secreto | Rol `mcp_readonly` y adaptador. |
@@ -158,7 +180,12 @@ Las pruebas de integración requieren el laboratorio y se habilitan explícitame
 - El MCP utiliza `mcp_readonly`, nunca el superusuario del laboratorio.
 - El rol tiene `SELECT` y `default_transaction_read_only=on`; no recibe escritura ni DDL.
 - El adaptador fuerza además sesiones de solo lectura.
-- Las consultas de metadata están definidas por la aplicación y sus filtros usan parámetros.
+- SQLGlot parsea PostgreSQL y solo permite una raíz de lectura; bloquea DML, DDL, escritura en CTE,
+  sentencias múltiples, bloqueos, comandos administrativos y funciones peligrosas conocidas.
+- La ejecución revalida siempre, usa parámetros nombrados y aplica límites de timeout, filas, bytes
+  serializados y concurrencia.
+- `EXPLAIN` fija `ANALYZE FALSE`; una solicitud no puede inyectar sus propias opciones de plan.
+- La auditoría guarda hash SHA-256, decisión, razones, duración y conteo, nunca SQL o resultados.
 - El caché persiste únicamente schemas, tablas, columnas, comentarios, PK y FK.
 - Contraseñas y cadenas completas no aparecen en herramientas ni errores normalizados.
 - El runtime usa UID/GID `10001`, raíz de solo lectura, sin capabilities y sin privilegios nuevos.
@@ -171,7 +198,7 @@ servicio directamente a Internet. Consulta [seguridad](docs/security.md).
 
 | Motor | Estado |
 |---|---|
-| PostgreSQL | Sprint 2: conectividad, metadata y catálogo implementados; ejecución SQL no disponible. |
+| PostgreSQL | Sprint 3: conectividad, catálogo, SELECT validado, límites y EXPLAIN seguro. |
 | SQL Server | Planificado para Sprint 9. |
 | MariaDB/MySQL | Planificado para Sprint 9. |
 | Informix | Planificado para Sprint 9; driver ARM64 por validar. |
@@ -181,5 +208,5 @@ servicio directamente a Internet. Consulta [seguridad](docs/security.md).
 ## Roadmap
 
 El plan se mantiene en [TASKS.md](TASKS.md). El siguiente hito, que no se iniciará sin aprobación,
-es Sprint 3: validación y ejecución SQL segura. Después siguen contratos MCP de metadata,
-generación, objetos, RAG, Open WebUI, motores adicionales y hardening.
+es Sprint 4: herramientas MCP completas y contratos versionados. Después siguen generación,
+objetos, RAG, Open WebUI, motores adicionales y hardening.

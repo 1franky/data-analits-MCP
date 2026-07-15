@@ -30,8 +30,8 @@ por el host configurado. Para el flujo completo se recomienda Compose.
 ```bash
 docker build --target test -t data-platform-mcp:test .
 docker run --rm data-platform-mcp:test pytest -m 'not integration'
-docker run --rm data-platform-mcp:test ruff check app tests
-docker run --rm data-platform-mcp:test ruff format --check app tests
+docker run --rm data-platform-mcp:test ruff check .
+docker run --rm data-platform-mcp:test ruff format --check .
 docker run --rm data-platform-mcp:test mypy app tests
 docker compose --env-file .env.example config --quiet
 docker compose --env-file .env.example build data-platform-mcp
@@ -59,8 +59,10 @@ docker run --rm \
 ```
 
 La suite comprueba conectividad, schemas, tablas, comentarios, columnas, PK, FK, refresh/búsqueda
-contra PostgreSQL real y que `mcp_readonly` no puede insertar. El valor mostrado coincide con el
-marcador de `.env.example`; usa el secreto real de tu `.env` si lo cambiaste.
+contra PostgreSQL real y que `mcp_readonly` no puede insertar. Desde Sprint 3 también cubre JOIN,
+CTE, agregaciones, ventanas, parámetros, límites de filas/bytes, timeout, serialización, auditoría,
+`EXPLAIN` JSON y pruebas que confirman que DML/DDL/bypass no cambian los datos. El valor mostrado
+coincide con el marcador de `.env.example`; usa el secreto real de tu `.env` si lo cambiaste.
 
 ## Prueba manual del servicio
 
@@ -69,6 +71,8 @@ curl --fail http://127.0.0.1:8000/health
 docker compose --env-file .env.example logs data-platform-mcp postgres-lab
 docker compose --env-file .env.example exec data-platform-mcp \
   python -c "from app.container import get_catalog_service; print(get_catalog_service().get_cache_status())"
+docker compose --env-file .env.example exec data-platform-mcp \
+  python -c "from app.container import get_audit_repository; print(len(get_audit_repository().list_records()))"
 ```
 
 Desde Open WebUI u otro contenedor conectado a `ai-platform`:
@@ -87,12 +91,18 @@ No uses `localhost` desde Open WebUI: apunta al propio contenedor de Open WebUI.
 - Builders de adaptadores registrados por tipo, sin cadenas `if/elif` centrales.
 - Errores en fronteras de transporte normalizados y sin detalles sensibles.
 - Consultas de catálogos parametrizadas; nunca interpolar nombres recibidos.
+- Toda consulta de usuario pasa por SQLGlot y `QueryExecutionService`; no invoques directamente el
+  método de ejecución del adaptador desde una herramienta.
+- Usa placeholders PostgreSQL nombrados (`%(nombre)s`) y exige coincidencia exacta de parámetros.
+- Añade casos de bloqueo y una prueba de integración que demuestre ausencia de cambios para toda
+  ampliación de la política SQL.
 - Snapshots de catálogo metadata-only; un fallo nunca reemplaza el último snapshot válido.
+- La auditoría no puede guardar texto SQL, parámetros ni filas devueltas.
 - No agregar código de sprints futuros.
 
 ## Flujo Git
 
-Sprint 2 se desarrolla en `feature/sprint-2-catalog-cache`. Antes de solicitar revisión:
+Sprint 3 se desarrolla en `feature/sprint-3-safe-sql`. Antes de solicitar revisión:
 
 ```bash
 git status --short

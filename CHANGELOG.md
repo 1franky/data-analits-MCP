@@ -29,6 +29,16 @@ Todos los cambios relevantes de este proyecto se documentan en este archivo. El 
 - Herramientas MCP `refresh_schema_cache`, `get_schema_cache_status` y `search_catalog`.
 - Filtros configurables de schemas/tablas y comentarios PostgreSQL de tabla/columna.
 - Pruebas de expiración, concurrencia, conservación del último caché válido e integración real.
+- Validación PostgreSQL basada en el AST de SQLGlot, con clasificación, objetos, parámetros y
+  razones estructuradas.
+- Herramientas MCP `validate_sql`, `execute_read_query` y `explain_query`.
+- Ejecución PostgreSQL readonly con parámetros nombrados, timeout, límite AST de filas, presupuesto
+  de bytes, serialización normalizada y control de concurrencia.
+- Planes PostgreSQL JSON mediante `EXPLAIN` con `ANALYZE FALSE`.
+- Auditoría SQLite de validación/ejecución/plan con hashes y decisiones, sin contenido de consultas.
+- Pruebas de ataques, bypass, aislamiento del adaptador e integración de JOIN, CTE, agregaciones,
+  ventanas, límites, timeout, escritura bloqueada y planes reales.
+- Documentación de política SQL segura, contratos MCP y riesgos residuales de funciones.
 
 ### Security
 
@@ -38,6 +48,11 @@ Todos los cambios relevantes de este proyecto se documentan en este archivo. El 
 - Sesiones PostgreSQL readonly, rol sin escritura/DDL y consultas de metadata parametrizadas.
 - Allowlist de opciones PostgreSQL y rechazo de campos sensibles dentro de `options`.
 - Persistencia exclusiva de metadata técnica; no se consultan ni almacenan filas de negocio.
+- Allowlist de lectura sobre AST y bloqueo de DML/DDL, escritura en CTE, múltiples sentencias,
+  `SELECT INTO`, locking reads, comandos y funciones PostgreSQL peligrosas conocidas.
+- Verificación redundante mediante rol/sesión readonly y rollback explícito por consulta.
+- Límites de filas, bytes, tiempo y concurrencia; parámetros SQL separados de los valores.
+- Auditoría que omite texto SQL, parámetros, columnas y filas.
 
 ### Fixed
 
@@ -46,5 +61,6 @@ Todos los cambios relevantes de este proyecto se documentan en este archivo. El 
 
 ### Not implemented
 
-- RAG, generación, validación o ejecución SQL.
-- Autenticación, auditoría y métricas operativas.
+- RAG y generación desde lenguaje natural.
+- Ejecución de escritura, procedimientos y triggers.
+- Autenticación, consulta/retención administrativa de auditoría y métricas operativas.

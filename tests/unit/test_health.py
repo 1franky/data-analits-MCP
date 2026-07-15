@@ -14,5 +14,5 @@ async def test_health_check_reports_service_liveness() -> None:
     assert response.json() == {
         "status": "ok",
         "service": "data-platform-mcp",
-        "version": "0.3.0",
+        "version": "0.4.0",
     }
