@@ -54,6 +54,7 @@ completar la validación y recibir aprobación explícita.
 | HU-501 Generar SQL con metadata | TODO | Sprints 2–4 | Servicio de generación, prompts | JOIN, CTE, ventanas, agregados | Dialecto/contexto real; supuestos y objetos | Decidir contrato LLM sin acoplar proveedor |
 | HU-502 Ejecutar lectura generada | TODO | HU-501, Sprint 3 | Orquestación generación/ejecución | SQL bloqueado no ejecuta; errores | Validación obligatoria y resultado completo | Espera HU-301–302 |
 | HU-503 Solicitar aclaraciones | TODO | HU-501 | Modelos de ambigüedad | Nombres similares y opciones | No ejecuta sobre suposición peligrosa | Requiere catálogo poblado |
+| HU-504 Generar reportes desde lenguaje natural | TODO | HU-502–503 | `app/reporting/`, modelos y herramientas MCP | Periodos relativos, resultado vacío, XLSX, PDF, CSV y JSON, límites y limpieza | Una petición como «dame las ventas del mes pasado» resuelve y muestra el periodo exacto, ejecuta solo lectura validada y entrega el reporte en el formato solicitado con datos, filtros, fecha de generación y aviso de truncamiento | Definir contrato MCP para entrega, almacenamiento temporal y tamaño máximo de archivos |
 
 ## Sprint 6 — Objetos de base de datos y explicaciones
 

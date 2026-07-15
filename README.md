@@ -233,4 +233,5 @@ servicio directamente a Internet. Consulta [seguridad](docs/security.md).
 
 El plan se mantiene en [TASKS.md](TASKS.md). El siguiente hito, que no se iniciará sin aprobación,
 es Sprint 5: generación de consultas mediante lenguaje natural usando metadata real. Después siguen
-objetos, RAG, Open WebUI, motores adicionales y hardening.
+la exportación de resultados como reportes XLSX, PDF, CSV o JSON, objetos, RAG, Open WebUI,
+motores adicionales y hardening.
