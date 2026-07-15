@@ -2,9 +2,9 @@
 
 Data Platform MCP es un servicio independiente del proveedor de LLM para explorar fuentes de datos
 desde clientes compatibles con Model Context Protocol (MCP), incluido Open WebUI. El proyecto se
-construye por sprints y actualmente implementa el **Sprint 3**: validación SQL mediante AST,
-ejecución PostgreSQL exclusivamente de lectura, planes seguros y auditoría inicial, además de la
-configuración y el catálogo de los sprints anteriores.
+construye por sprints y actualmente implementa el **Sprint 4**: exploración MCP completa de
+schemas, tablas y relaciones mediante contratos estructurados y versionados, además de las
+capacidades seguras de conexión, catálogo y SQL de los sprints anteriores.
 
 No existe todavía generación de consultas desde lenguaje natural, RAG ni ejecución de escritura.
 El catálogo nunca almacena filas de negocio y la auditoría guarda metadatos de seguridad, no el SQL,
@@ -12,16 +12,23 @@ los parámetros ni los valores devueltos.
 
 ## Arquitectura actual
 
-Un proceso ASGI ejecutado por Uvicorn expone:
+El mismo servidor FastMCP se expone por Streamable HTTP dentro del proceso ASGI y por STDIO para
+clientes locales. La superficie pública contiene 15 herramientas:
 
 - `GET /health`: liveness administrativo de FastAPI.
 - `/mcp`: transporte MCP Streamable HTTP de FastMCP.
+- `health_check`: liveness MCP con versión del servidor y del contrato.
 - `hello_world`: herramienta de verificación básica.
 - `list_connections`: declaraciones y capacidades sin host, usuario ni secretos.
+- `get_connection_capabilities`: capacidades seguras de una conexión identificada.
 - `test_connection`: prueba acotada de conectividad con latencia y error normalizado.
 - `refresh_schema_cache`: actualiza la metadata de una conexión o de todas las habilitadas.
 - `get_schema_cache_status`: informa estado, fecha, error y obsolescencia de cada snapshot.
 - `search_catalog`: busca tablas, columnas y descripciones, e incluye relaciones FK relevantes.
+- `list_schemas`: lista schemas del snapshot de una conexión.
+- `list_tables`: lista tablas cacheadas, con filtro opcional por schema.
+- `describe_table`: devuelve columnas, comentarios, PK, índices únicos y FK.
+- `list_relationships`: devuelve origen, destino, columnas y cardinalidad inferida de cada FK.
 - `validate_sql`: parsea, clasifica y explica por qué una sentencia puede o no ejecutarse.
 - `execute_read_query`: ejecuta un único `SELECT` validado con límites de tiempo, filas y bytes.
 - `explain_query`: devuelve el plan JSON de un `SELECT` sin utilizar `ANALYZE`.
@@ -30,7 +37,8 @@ La configuración pasa por Pydantic, el servicio resuelve secretos desde el ento
 registro crea el adaptador. `CatalogService` coordina snapshots atómicos guardados en SQLite;
 `QueryValidationService` aplica una política AST por dialecto y `QueryExecutionService` es la única
 entrada a consultas de usuario. Consulta [la arquitectura](docs/architecture.md),
-[la seguridad SQL](docs/query-security.md) y [la operación del catálogo](docs/catalog.md).
+[los contratos MCP](docs/mcp-contracts.md), [la seguridad SQL](docs/query-security.md) y
+[la operación del catálogo](docs/catalog.md).
 
 ## Requisitos
 
@@ -60,7 +68,7 @@ Respuesta esperada:
 {
   "status": "ok",
   "service": "data-platform-mcp",
-  "version": "0.4.0"
+  "version": "0.5.0"
 }
 ```
 
@@ -73,6 +81,13 @@ PostgreSQL: postgres-lab:5432
 ```
 
 Open WebUI puede permanecer en otro proyecto Compose: solo necesita compartir `ai-platform`.
+
+Para un cliente MCP local, el entry point instalado inicia exactamente el mismo catálogo de tools
+por STDIO:
+
+```bash
+data-platform-mcp-stdio
+```
 
 Para eliminar también los datos desechables del laboratorio:
 
@@ -140,7 +155,7 @@ Variables Compose incluidas en `.env.example`:
 | `MCP_BIND_ADDRESS` | `127.0.0.1` | Interfaz local del MCP/API. |
 | `MCP_PORT` | `8000` | Puerto local del MCP/API. |
 | `LOG_LEVEL` | `info` | Nivel de log de Uvicorn. |
-| `IMAGE_TAG` | `0.4.0` | Etiqueta local de la imagen. |
+| `IMAGE_TAG` | `0.5.0` | Etiqueta local de la imagen. |
 | `CATALOG_DB_PATH` | `/app/data/catalog.db` | SQLite persistente de metadata técnica. |
 | `AUDIT_DB_PATH` | `/app/data/audit.db` | SQLite persistente de eventos SQL sin contenido sensible. |
 | `POSTGRES_IMAGE_TAG` | `17.10` | Etiqueta local del laboratorio PostgreSQL. |
@@ -165,11 +180,20 @@ Validaciones reproducibles mediante Docker:
 ```bash
 docker build --target test -t data-platform-mcp:test .
 docker run --rm data-platform-mcp:test pytest
-docker run --rm data-platform-mcp:test ruff check app tests
-docker run --rm data-platform-mcp:test ruff format --check app tests
+docker run --rm data-platform-mcp:test ruff check app tests scripts
+docker run --rm data-platform-mcp:test ruff format --check app tests scripts
 docker run --rm data-platform-mcp:test mypy app tests
 docker compose --env-file .env.example config --quiet
 docker compose --env-file .env.example build data-platform-mcp
+```
+
+Con el stack activo, el smoke test de red refresca el catálogo y llama las herramientas de
+exploración reales:
+
+```bash
+docker run --rm --network ai-platform \
+  data-platform-mcp:test \
+  python scripts/smoke_mcp.py --url http://data-platform-mcp:8000/mcp
 ```
 
 Las pruebas de integración requieren el laboratorio y se habilitan explícitamente; consulta
@@ -186,7 +210,7 @@ Las pruebas de integración requieren el laboratorio y se habilitan explícitame
   serializados y concurrencia.
 - `EXPLAIN` fija `ANALYZE FALSE`; una solicitud no puede inyectar sus propias opciones de plan.
 - La auditoría guarda hash SHA-256, decisión, razones, duración y conteo, nunca SQL o resultados.
-- El caché persiste únicamente schemas, tablas, columnas, comentarios, PK y FK.
+- El caché persiste únicamente schemas, tablas, columnas, comentarios, PK, índices únicos y FK.
 - Contraseñas y cadenas completas no aparecen en herramientas ni errores normalizados.
 - El runtime usa UID/GID `10001`, raíz de solo lectura, sin capabilities y sin privilegios nuevos.
 - Los puertos se publican solo en loopback por defecto.
@@ -198,7 +222,7 @@ servicio directamente a Internet. Consulta [seguridad](docs/security.md).
 
 | Motor | Estado |
 |---|---|
-| PostgreSQL | Sprint 3: conectividad, catálogo, SELECT validado, límites y EXPLAIN seguro. |
+| PostgreSQL | Sprint 4: exploración MCP versionada, catálogo, SELECT validado y EXPLAIN seguro. |
 | SQL Server | Planificado para Sprint 9. |
 | MariaDB/MySQL | Planificado para Sprint 9. |
 | Informix | Planificado para Sprint 9; driver ARM64 por validar. |
@@ -208,5 +232,5 @@ servicio directamente a Internet. Consulta [seguridad](docs/security.md).
 ## Roadmap
 
 El plan se mantiene en [TASKS.md](TASKS.md). El siguiente hito, que no se iniciará sin aprobación,
-es Sprint 4: herramientas MCP completas y contratos versionados. Después siguen generación,
+es Sprint 5: generación de consultas mediante lenguaje natural usando metadata real. Después siguen
 objetos, RAG, Open WebUI, motores adicionales y hardening.

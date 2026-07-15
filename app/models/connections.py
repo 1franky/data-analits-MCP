@@ -248,6 +248,15 @@ class ForeignKeyInfo(BaseModel):
     referenced_columns: tuple[str, ...]
 
 
+class UniqueKeyInfo(BaseModel):
+    """Simple, complete unique index usable for cardinality inference."""
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    columns: tuple[str, ...]
+
+
 class TableDescription(BaseModel):
     """Detailed metadata for one visible table."""
 
@@ -255,7 +264,9 @@ class TableDescription(BaseModel):
 
     schema_name: str = Field(alias="schema")
     name: str
+    kind: Literal["table", "partitioned_table"] = "table"
     description: str | None = None
     columns: tuple[ColumnInfo, ...]
     primary_key: tuple[str, ...]
+    unique_keys: tuple[UniqueKeyInfo, ...] = ()
     foreign_keys: tuple[ForeignKeyInfo, ...]

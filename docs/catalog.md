@@ -3,9 +3,13 @@
 ## Contenido del snapshot
 
 Cada conexión tiene como máximo un snapshot válido con fecha, hash SHA-256, schemas, tablas,
-comentarios de tablas/columnas, tipos, nulabilidad, defaults, claves primarias y foráneas. El
-adaptador consulta exclusivamente catálogos internos de PostgreSQL. No se ejecuta `SELECT` sobre
-tablas de negocio y no se almacenan sus filas.
+comentarios de tablas/columnas, tipos, nulabilidad, defaults, claves primarias, índices únicos
+simples/completos y claves foráneas. El adaptador consulta exclusivamente catálogos internos de
+PostgreSQL. No se ejecuta `SELECT` sobre tablas de negocio y no se almacenan sus filas.
+
+Los índices únicos permiten inferir la cardinalidad máxima origen→destino de una FK. Coincidencia
+con PK o índice único produce `one-to-one`; sin unicidad declarada produce `many-to-one`. Índices
+parciales, de expresión, inválidos y columnas `INCLUDE` se excluyen de la inferencia.
 
 ## Actualización
 
@@ -53,6 +57,10 @@ El endpoint `/health` sólo confirma que el proceso responde. Para observar el c
 `get_schema_cache_status`; revisa `state`, `last_attempt_completed_at`, `last_refreshed_at`,
 `stale`, `error_code` y `message`. El scheduler trabaja en un thread mediante `asyncio.to_thread`,
 por lo que la lectura MCP/HTTP no queda bloqueada durante una conexión lenta.
+
+`list_schemas`, `list_tables`, `describe_table` y `list_relationships` consultan el último snapshot
+válido y devuelven su `cache_status`. No disparan una conexión implícita. Si no existe snapshot, el
+cliente debe ejecutar `refresh_schema_cache` y volver a intentar.
 
 Este diseño asume una instancia del servicio. Antes de escalar horizontalmente se necesita un
 repositorio compartido y un lock distribuido; esa ampliación no pertenece al Sprint 2.

@@ -58,6 +58,13 @@ class ConnectionService:
             for connection in sorted(self._connections.values(), key=lambda item: item.id)
         )
 
+    def get_connection_summary(self, connection_id: str) -> ConnectionSummary:
+        """Return one safe connection declaration without resolving secrets."""
+        for summary in self.list_connections():
+            if summary.id == connection_id:
+                return summary
+        raise ConnectionNotFoundError(connection_id)
+
     def test_connection(self, connection_id: str) -> ConnectionTestResult:
         """Test one enabled connection and normalize domain failures."""
         try:

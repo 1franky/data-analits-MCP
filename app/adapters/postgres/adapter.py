@@ -29,6 +29,7 @@ from app.models.connections import (
     SchemaInfo,
     TableDescription,
     TableInfo,
+    UniqueKeyInfo,
 )
 from app.models.query import (
     AdapterQueryPlan,
@@ -171,8 +172,9 @@ class PostgresAdapter(SqlDatabaseAdapter):
                 columns = self._load_columns(connection, schema, table)
                 if not columns:
                     raise DatabaseObjectNotFoundError(schema, table)
-                description = self._load_table_description(connection, schema, table)
+                description, kind = self._load_table_metadata(connection, schema, table)
                 primary_key = self._load_primary_key(connection, schema, table)
+                unique_keys = self._load_unique_keys(connection, schema, table)
                 foreign_keys = self._load_foreign_keys(connection, schema, table)
         except psycopg.Error:
             self._raise_metadata_error()
@@ -180,9 +182,11 @@ class PostgresAdapter(SqlDatabaseAdapter):
         return TableDescription(
             schema=schema,
             name=table,
+            kind=kind,
             description=description,
             columns=columns,
             primary_key=primary_key,
+            unique_keys=unique_keys,
             foreign_keys=foreign_keys,
         )
 
@@ -423,13 +427,18 @@ class PostgresAdapter(SqlDatabaseAdapter):
         return tuple(cast(str, row["column_name"]) for row in rows)
 
     @staticmethod
-    def _load_table_description(
+    def _load_table_metadata(
         connection: psycopg.Connection[DictRow],
         schema: str,
         table: str,
-    ) -> str | None:
+    ) -> tuple[str | None, Literal["table", "partitioned_table"]]:
         query = """
-            SELECT pg_catalog.obj_description(relation.oid, 'pg_class') AS description
+            SELECT
+                pg_catalog.obj_description(relation.oid, 'pg_class') AS description,
+                CASE relation.relkind
+                    WHEN 'p' THEN 'partitioned_table'
+                    ELSE 'table'
+                END AS table_kind
             FROM pg_catalog.pg_class AS relation
             INNER JOIN pg_catalog.pg_namespace AS namespace
                 ON namespace.oid = relation.relnamespace
@@ -439,7 +448,55 @@ class PostgresAdapter(SqlDatabaseAdapter):
               AND has_table_privilege(relation.oid, 'SELECT')
         """
         row = connection.execute(query, (schema, table)).fetchone()
-        return None if row is None else cast(str | None, row["description"])
+        if row is None:
+            raise DatabaseObjectNotFoundError(schema, table)
+        return (
+            cast(str | None, row["description"]),
+            cast(Literal["table", "partitioned_table"], row["table_kind"]),
+        )
+
+    @staticmethod
+    def _load_unique_keys(
+        connection: psycopg.Connection[DictRow],
+        schema: str,
+        table: str,
+    ) -> tuple[UniqueKeyInfo, ...]:
+        query = """
+            SELECT
+                index_relation.relname AS index_name,
+                array_agg(attribute.attname ORDER BY key_column.position) AS columns
+            FROM pg_catalog.pg_index AS index_definition
+            INNER JOIN pg_catalog.pg_class AS relation
+                ON relation.oid = index_definition.indrelid
+            INNER JOIN pg_catalog.pg_namespace AS namespace
+                ON namespace.oid = relation.relnamespace
+            INNER JOIN pg_catalog.pg_class AS index_relation
+                ON index_relation.oid = index_definition.indexrelid
+            INNER JOIN LATERAL unnest(index_definition.indkey)
+                WITH ORDINALITY AS key_column(attribute_number, position) ON TRUE
+            INNER JOIN pg_catalog.pg_attribute AS attribute
+                ON attribute.attrelid = relation.oid
+               AND attribute.attnum = key_column.attribute_number
+            WHERE namespace.nspname = %s
+              AND relation.relname = %s
+              AND index_definition.indisunique
+              AND NOT index_definition.indisprimary
+              AND index_definition.indisvalid
+              AND index_definition.indpred IS NULL
+              AND index_definition.indexprs IS NULL
+              AND key_column.position <= index_definition.indnkeyatts
+              AND has_table_privilege(relation.oid, 'SELECT')
+            GROUP BY index_relation.relname
+            ORDER BY index_relation.relname
+        """
+        rows = connection.execute(query, (schema, table)).fetchall()
+        return tuple(
+            UniqueKeyInfo(
+                name=cast(str, row["index_name"]),
+                columns=tuple(cast(list[str], row["columns"])),
+            )
+            for row in rows
+        )
 
     @staticmethod
     def _load_foreign_keys(

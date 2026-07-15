@@ -7,8 +7,15 @@ from fnmatch import fnmatchcase
 from hashlib import sha256
 from threading import Lock
 
-from app.exceptions import CatalogRequestError, ConnectionNotFoundError, DataPlatformError
+from app.exceptions import (
+    CatalogRequestError,
+    CatalogSnapshotNotFoundError,
+    ConnectionNotFoundError,
+    DatabaseObjectNotFoundError,
+    DataPlatformError,
+)
 from app.models.catalog import (
+    CardinalityInference,
     CatalogCacheStatus,
     CatalogRefreshOutcome,
     CatalogRefreshResult,
@@ -17,12 +24,20 @@ from app.models.catalog import (
     CatalogSearchMatch,
     CatalogSearchResponse,
     CatalogSnapshot,
+    RelationshipCardinality,
 )
 from app.models.connections import (
     CatalogConfig,
     ConnectionSummary,
     SchemaInfo,
     TableDescription,
+)
+from app.models.metadata import (
+    RelationshipListResponse,
+    SchemaListResponse,
+    TableDescriptionResponse,
+    TableListResponse,
+    TableSummary,
 )
 from app.repositories import CatalogRepository
 from app.services.connections import ConnectionService
@@ -181,6 +196,96 @@ class CatalogService:
             cache_statuses=self.get_cache_status(connection_id),
         )
 
+    def list_schemas(self, connection_id: str) -> SchemaListResponse:
+        """List schemas from one valid cached snapshot."""
+        snapshot, status = self._snapshot_context(connection_id)
+        return SchemaListResponse(
+            connection_id=connection_id,
+            schemas=snapshot.schemas,
+            cache_status=status,
+        )
+
+    def list_tables(
+        self,
+        connection_id: str,
+        schema: str | None = None,
+    ) -> TableListResponse:
+        """List cached tables, optionally restricted to one schema."""
+        schema_filter = self._normalize_filter(schema, "schema")
+        snapshot, status = self._snapshot_context(connection_id)
+        tables = tuple(
+            TableSummary.from_description(table)
+            for table in snapshot.tables
+            if schema_filter is None or table.schema_name == schema_filter
+        )
+        return TableListResponse(
+            connection_id=connection_id,
+            schema_filter=schema_filter,
+            tables=tables,
+            cache_status=status,
+        )
+
+    def describe_table(
+        self,
+        connection_id: str,
+        schema: str,
+        table: str,
+    ) -> TableDescriptionResponse:
+        """Describe one exact table from a valid cached snapshot."""
+        schema_name = self._normalize_filter(schema, "schema")
+        table_name = self._normalize_filter(table, "table")
+        if schema_name is None or table_name is None:
+            raise CatalogRequestError(
+                code="CATALOG_OBJECT_NAME_EMPTY",
+                message="schema y table son obligatorios.",
+            )
+        snapshot, status = self._snapshot_context(connection_id)
+        description = next(
+            (
+                candidate
+                for candidate in snapshot.tables
+                if candidate.schema_name == schema_name and candidate.name == table_name
+            ),
+            None,
+        )
+        if description is None:
+            raise DatabaseObjectNotFoundError(schema_name, table_name)
+        return TableDescriptionResponse(
+            connection_id=connection_id,
+            table=description,
+            cache_status=status,
+        )
+
+    def list_relationships(
+        self,
+        connection_id: str,
+        schema: str | None = None,
+        table: str | None = None,
+    ) -> RelationshipListResponse:
+        """List cached foreign keys relevant to optional source/target filters."""
+        schema_filter = self._normalize_filter(schema, "schema")
+        table_filter = self._normalize_filter(table, "table")
+        snapshot, status = self._snapshot_context(connection_id)
+        relationships = tuple(
+            relationship
+            for relationship in self._relationships(snapshot.tables)
+            if (
+                schema_filter is None
+                or schema_filter in {relationship.source_schema, relationship.target_schema}
+            )
+            and (
+                table_filter is None
+                or table_filter in {relationship.source_table, relationship.target_table}
+            )
+        )
+        return RelationshipListResponse(
+            connection_id=connection_id,
+            schema_filter=schema_filter,
+            table_filter=table_filter,
+            relationships=relationships,
+            cache_status=status,
+        )
+
     def _build_snapshot(self, connection_id: str) -> CatalogSnapshot:
         adapter = self._connections.get_adapter(connection_id)
         excluded_schemas = {name.casefold() for name in self._config.excluded_schemas}
@@ -193,7 +298,8 @@ class CatalogService:
         for schema in schemas:
             for table in adapter.list_tables(schema.name):
                 if self._table_is_included(table.schema_name, table.name):
-                    tables.append(adapter.describe_table(table.schema_name, table.name))
+                    description = adapter.describe_table(table.schema_name, table.name)
+                    tables.append(description.model_copy(update={"kind": table.kind}))
         ordered_tables = tuple(sorted(tables, key=lambda item: (item.schema_name, item.name)))
         refreshed_at = self._clock()
         return CatalogSnapshot(
@@ -227,6 +333,17 @@ class CatalogService:
             error_code=error_code,
             message=message,
         )
+
+    def _snapshot_context(
+        self,
+        connection_id: str,
+    ) -> tuple[CatalogSnapshot, CatalogCacheStatus]:
+        self._connections.get_connection_config(connection_id)
+        snapshot = self._repository.get_snapshot(connection_id)
+        if snapshot is None:
+            raise CatalogSnapshotNotFoundError(connection_id)
+        status = self.get_cache_status(connection_id)[0]
+        return snapshot, status
 
     def _selected_connections(self, connection_id: str | None) -> tuple[ConnectionSummary, ...]:
         summaries = self._connections.list_connections()
@@ -288,19 +405,53 @@ class CatalogService:
     ) -> tuple[CatalogRelationship, ...]:
         relationships: list[CatalogRelationship] = []
         for table in tables:
-            relationships.extend(
-                CatalogRelationship(
-                    name=foreign_key.name,
-                    source_schema=table.schema_name,
-                    source_table=table.name,
-                    source_columns=foreign_key.columns,
-                    target_schema=foreign_key.referenced_schema,
-                    target_table=foreign_key.referenced_table,
-                    target_columns=foreign_key.referenced_columns,
+            for foreign_key in table.foreign_keys:
+                cardinality = RelationshipCardinality.MANY_TO_ONE
+                inference = CardinalityInference.SOURCE_NOT_UNIQUE
+                if CatalogService._same_columns(foreign_key.columns, table.primary_key):
+                    cardinality = RelationshipCardinality.ONE_TO_ONE
+                    inference = CardinalityInference.SOURCE_PRIMARY_KEY
+                elif any(
+                    CatalogService._same_columns(foreign_key.columns, unique_key.columns)
+                    for unique_key in table.unique_keys
+                ):
+                    cardinality = RelationshipCardinality.ONE_TO_ONE
+                    inference = CardinalityInference.SOURCE_UNIQUE_KEY
+                relationships.append(
+                    CatalogRelationship(
+                        name=foreign_key.name,
+                        source_schema=table.schema_name,
+                        source_table=table.name,
+                        source_columns=foreign_key.columns,
+                        target_schema=foreign_key.referenced_schema,
+                        target_table=foreign_key.referenced_table,
+                        target_columns=foreign_key.referenced_columns,
+                        cardinality=cardinality,
+                        cardinality_inference=inference,
+                    )
                 )
-                for foreign_key in table.foreign_keys
+        return tuple(
+            sorted(
+                relationships,
+                key=lambda item: (item.source_schema, item.source_table, item.name),
             )
-        return tuple(relationships)
+        )
+
+    @staticmethod
+    def _same_columns(left: tuple[str, ...], right: tuple[str, ...]) -> bool:
+        return bool(left) and len(left) == len(right) and set(left) == set(right)
+
+    @staticmethod
+    def _normalize_filter(value: str | None, field: str) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise CatalogRequestError(
+                code="CATALOG_FILTER_EMPTY",
+                message=f"El filtro {field} no puede estar vacío.",
+            )
+        return normalized
 
     @staticmethod
     def _match_table(

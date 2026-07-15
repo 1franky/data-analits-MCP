@@ -26,6 +26,21 @@ class CatalogRefreshOutcome(StrEnum):
     DISABLED = "disabled"
 
 
+class RelationshipCardinality(StrEnum):
+    """Maximum source-to-target cardinality inferred from uniqueness metadata."""
+
+    ONE_TO_ONE = "one-to-one"
+    MANY_TO_ONE = "many-to-one"
+
+
+class CardinalityInference(StrEnum):
+    """Stable explanation of how relationship cardinality was inferred."""
+
+    SOURCE_PRIMARY_KEY = "source_primary_key"
+    SOURCE_UNIQUE_KEY = "source_unique_key"
+    SOURCE_NOT_UNIQUE = "source_not_unique"
+
+
 class CatalogSnapshot(BaseModel):
     """Atomic metadata-only snapshot for one connection."""
 
@@ -97,6 +112,8 @@ class CatalogRelationship(BaseModel):
     target_schema: str
     target_table: str
     target_columns: tuple[str, ...]
+    cardinality: RelationshipCardinality
+    cardinality_inference: CardinalityInference
 
 
 class CatalogSearchMatch(BaseModel):
