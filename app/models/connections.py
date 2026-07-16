@@ -6,7 +6,9 @@ from typing import Annotated, Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models.audit import AuditConfig
+from app.models.generation import GenerationConfig
 from app.models.query import QueryPolicyConfig
+from app.models.reporting import ReportingConfig
 
 ConnectionOptionValue = str | int | bool
 
@@ -162,6 +164,8 @@ class ConnectionsConfig(BaseModel):
     catalog: CatalogConfig = Field(default_factory=CatalogConfig)
     query: QueryPolicyConfig = Field(default_factory=QueryPolicyConfig)
     audit: AuditConfig = Field(default_factory=AuditConfig)
+    generation: GenerationConfig = Field(default_factory=GenerationConfig)
+    reporting: ReportingConfig = Field(default_factory=ReportingConfig)
 
     @field_validator("connections")
     @classmethod

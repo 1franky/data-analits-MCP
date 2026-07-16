@@ -9,6 +9,9 @@ EXPECTED_TOOLS = {
     "describe_table",
     "execute_read_query",
     "explain_query",
+    "generate_and_execute_query",
+    "generate_report",
+    "generate_sql",
     "get_connection_capabilities",
     "get_schema_cache_status",
     "health_check",
@@ -25,6 +28,9 @@ EXPECTED_TOOLS = {
 
 VERSIONED_TOOLS = {
     "describe_table": {"connection_id", "table", "cache_status"},
+    "generate_and_execute_query": {"connection_id", "question", "outcome"},
+    "generate_report": {"connection_id", "question", "format", "outcome", "generated_at"},
+    "generate_sql": {"connection_id", "question", "outcome"},
     "get_connection_capabilities": {"connection_id", "connection"},
     "health_check": {"status", "service", "server_version"},
     "list_relationships": {

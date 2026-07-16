@@ -29,6 +29,9 @@ async def test_hello_world_is_registered_and_callable_over_mcp() -> None:
 
     assert {tool.name for tool in tools} == {
         "describe_table",
+        "generate_and_execute_query",
+        "generate_report",
+        "generate_sql",
         "get_connection_capabilities",
         "hello_world",
         "health_check",

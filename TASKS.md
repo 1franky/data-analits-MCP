@@ -2,8 +2,9 @@
 
 Estados permitidos: `TODO`, `IN_PROGRESS`, `BLOCKED`, `DONE`.
 
-Sprint 4 está implementado en la rama actual. No se inicia Sprint 5 ni historias posteriores hasta
-completar la validación y recibir aprobación explícita.
+Sprint 5 fue aprobado explícitamente, sus cuatro historias (HU-501 a HU-504) quedan implementadas
+en la rama actual y su validación reproducible se registró más abajo. No se inicia Sprint 6 ni
+historias posteriores hasta recibir aprobación explícita.
 
 ## Sprint 0 — Descubrimiento, arquitectura y bootstrap
 
@@ -51,10 +52,10 @@ completar la validación y recibir aprobación explícita.
 
 | Historia | Estado | Dependencias | Archivos previstos | Pruebas requeridas | Criterios de aceptación | Bloqueos |
 |---|---|---|---|---|---|---|
-| HU-501 Generar SQL con metadata | TODO | Sprints 2–4 | Servicio de generación, prompts | JOIN, CTE, ventanas, agregados | Dialecto/contexto real; supuestos y objetos | Decidir contrato LLM sin acoplar proveedor |
-| HU-502 Ejecutar lectura generada | TODO | HU-501, Sprint 3 | Orquestación generación/ejecución | SQL bloqueado no ejecuta; errores | Validación obligatoria y resultado completo | Espera HU-301–302 |
-| HU-503 Solicitar aclaraciones | TODO | HU-501 | Modelos de ambigüedad | Nombres similares y opciones | No ejecuta sobre suposición peligrosa | Requiere catálogo poblado |
-| HU-504 Generar reportes desde lenguaje natural | TODO | HU-502–503 | `app/reporting/`, modelos y herramientas MCP | Periodos relativos, resultado vacío, XLSX, PDF, CSV y JSON, límites y limpieza | Una petición como «dame las ventas del mes pasado» resuelve y muestra el periodo exacto, ejecuta solo lectura validada y entrega el reporte en el formato solicitado con datos, filtros, fecha de generación y aviso de truncamiento | Definir contrato MCP para entrega, almacenamiento temporal y tamaño máximo de archivos |
+| HU-501 Generar SQL con metadata | DONE | Sprints 2–4 | Servicio de generación, prompts | JOIN, CTE, ventanas, agregados | Dialecto/contexto real; supuestos y objetos | Ninguno |
+| HU-502 Ejecutar lectura generada | DONE | HU-501, Sprint 3 | Orquestación generación/ejecución | SQL bloqueado no ejecuta; errores | Validación obligatoria y resultado completo | Ninguno |
+| HU-503 Solicitar aclaraciones | DONE | HU-501 | Modelos de ambigüedad | Nombres similares y opciones | No ejecuta sobre suposición peligrosa | Ninguno |
+| HU-504 Generar reportes desde lenguaje natural | DONE | HU-502–503 | `app/reporting/`, modelos y herramientas MCP | Periodos relativos, resultado vacío, XLSX, PDF, CSV y JSON, límites y limpieza | Una petición como «dame las ventas del mes pasado» resuelve y muestra el periodo exacto, ejecuta solo lectura validada y entrega el reporte en el formato solicitado con datos, filtros, fecha de generación y aviso de truncamiento | Ninguno |
 
 ## Sprint 6 — Objetos de base de datos y explicaciones
 
@@ -205,4 +206,38 @@ MCP STDIO: PASS — subproceso lista tools e invoca health_check 0.5.0
 metadata: PASS — schemas, tablas, comentarios, PK, índices únicos, FK y cardinalidad inferida
 runtime restrictions: PASS — UID 10001, raíz read-only, cap_drop ALL, no-new-privileges
 runtime platform: PASS — MCP linux/arm64 sobre red externa ai-platform
+```
+
+## Evidencia de validación de Sprint 5
+
+Validación ejecutada el 2026-07-16 sobre Docker Desktop ARM64:
+
+```text
+Python del target test: PASS — Python 3.12.13, linux/arm64
+pytest unitario/contratos/STDIO: PASS — 180 passed, 11 integration deselected in 4.45s
+pytest integración PostgreSQL: PASS — 11 passed, 180 deselected (ejecutado en la red ai-platform)
+ruff check: PASS — All checks passed
+ruff format --check: PASS — 114 files already formatted
+mypy app tests: PASS — no issues found in 114 source files
+docker compose config --quiet: PASS
+docker build --target test: PASS — image sha256:5f1a07b129ed...
+docker compose build/up: PASS — MCP sha256:19a5d1feae70..., ambos servicios healthy, versión 0.6.0
+MCP HTTP smoke: PASS — 18 tools (scripts/smoke_mcp.py ampliado), contrato 1.0.0, refresh y metadata
+  PostgreSQL reales
+MCP STDIO: PASS — subproceso lista tools e invoca health_check
+generación SQL: PASS — GenerationService nunca ejecuta sin revalidación completa; SQL generado tipo
+  DELETE/INSERT verificado con adapter espía (execute_calls == 0)
+aclaraciones: PASS — candidatos inventados por el LLM fuera del catálogo cacheado se descartan;
+  clarification nunca coexiste con execution poblado
+auditoría de generación/reportes: PASS — ni la pregunta en lenguaje natural ni el SQL aparecen en
+  texto plano; solo hash SHA-256 (prompt_hash, query_hash)
+reportes: PASS — CSV/JSON/XLSX/PDF exportados en memoria (sin disco); resultado vacío no es error;
+  truncamiento por tamaño reduce filas hasta caber; rechazo explícito si ni 0 filas caben
+runtime restrictions: PASS — UID 10001, raíz read-only, cap_drop ALL, no-new-privileges
+runtime platform: PASS — MCP y laboratorio linux/arm64 sobre red externa ai-platform
+
+Nota: generation.enabled y reporting.enabled quedan en false por defecto (sin proveedor LLM en el
+laboratorio local); generate_sql, generate_and_execute_query y generate_report se validan por
+contrato MCP (presencia, input/output schema) y por su suite unitaria con FakeLlmProvider, no con
+una llamada real a un proveedor LLM en este entorno.
 ```

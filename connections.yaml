@@ -35,3 +35,23 @@ query:
 
 audit:
   enabled: true
+
+generation:
+  enabled: false
+  max_context_tables: 20
+  # provider:
+  #   type: openai_compatible
+  #   base_url: http://llm-gateway:8080/v1
+  #   api_key_env: LLM_API_KEY
+  #   model: gpt-4o-mini
+  #   timeout_seconds: 30
+  #   max_output_tokens: 1024
+  #   temperature: 0.0
+  #   json_mode: true
+
+reporting:
+  enabled: false
+  default_row_limit: 1000
+  max_inline_bytes: 5000000
+  on_size_exceeded: truncate
+  allowed_formats: [csv, json, xlsx, pdf]

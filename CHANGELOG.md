@@ -49,6 +49,25 @@ Todos los cambios relevantes de este proyecto se documentan en este archivo. El 
 - Pruebas de catálogo, schemas JSON de entrada/salida, registro completo de tools y subproceso STDIO.
 - Script `scripts/smoke_mcp.py` para validar el contrato contra un despliegue real por red.
 - Política de versionado y compatibilidad MCP, catálogo de entradas/salidas y arquitectura Sprint 4.
+- Generación de SQL asistida por LLM sobre el catálogo cacheado, con fábrica de proveedores por
+  registro y un adaptador `OpenAiCompatibleProvider` vía HTTP genérico, sin acoplar el núcleo a un
+  vendor concreto.
+- Selección de contexto relevante del catálogo (rankeo por coincidencia de términos y vecinos por
+  FK) y construcción de prompts que fuerzan el dialecto y los objetos reales de la conexión.
+- Herramientas MCP `generate_sql` y `generate_and_execute_query`, con el SQL generado siempre
+  revalidado íntegramente antes de poder ejecutarse.
+- Solicitud estructurada de aclaraciones ante ambigüedad, con candidatos groundeados
+  exclusivamente contra el catálogo cacheado real.
+- Resolución determinística de periodos relativos («el mes pasado», «últimos 7 días», «este
+  trimestre», etc.), sin intervención del LLM en el cálculo de fechas.
+- Exportadores de reportes CSV, JSON, XLSX y PDF por registro, entregados en línea como bytes
+  base64 con límite de tamaño configurable (truncamiento progresivo o rechazo explícito).
+- Herramienta MCP `generate_report`, para un catálogo total de 18 tools.
+- Pruebas de generación, orquestación, aclaración, periodos, exportadores y reportes, incluida
+  verificación explícita de que el SQL bloqueado nunca ejecuta y de que la pregunta y el SQL nunca
+  aparecen en texto plano en auditoría.
+- Documentación de generación asistida por LLM y reportes en arquitectura y catálogo de
+  herramientas MCP.
 
 ### Security
 
@@ -63,6 +82,14 @@ Todos los cambios relevantes de este proyecto se documentan en este archivo. El 
 - Verificación redundante mediante rol/sesión readonly y rollback explícito por consulta.
 - Límites de filas, bytes, tiempo y concurrencia; parámetros SQL separados de los valores.
 - Auditoría que omite texto SQL, parámetros, columnas y filas.
+- Generación LLM deshabilitada por defecto; requiere configurar explícitamente
+  `generation.provider` y resolver su secreto vía variable de entorno.
+- El SQL generado nunca se ejecuta con la validación informativa de generación: se revalida
+  íntegramente por el mismo camino que `execute_read_query`.
+- Auditoría de generación y reportes con hash SHA-256 de la pregunta y del SQL, nunca su texto ni
+  el archivo generado.
+- Reportes entregados exclusivamente en memoria (bytes base64 en la respuesta MCP), sin
+  almacenamiento temporal en disco ni volumen adicional.
 
 ### Fixed
 
@@ -73,7 +100,7 @@ Todos los cambios relevantes de este proyecto se documentan en este archivo. El 
 
 ### Not implemented
 
-- RAG y generación desde lenguaje natural.
+- RAG documental.
 - Procedimientos, vistas, triggers y explicaciones de objetos de base de datos.
 - Ejecución de escritura de cualquier tipo.
 - Autenticación, consulta/retención administrativa de auditoría y métricas operativas.

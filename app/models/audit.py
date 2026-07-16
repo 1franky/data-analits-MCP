@@ -20,6 +20,8 @@ class AuditOperation(StrEnum):
     VALIDATE = "validate"
     EXECUTE = "execute"
     EXPLAIN = "explain"
+    GENERATE = "generate"
+    REPORT = "report"
 
 
 class AuditStatus(StrEnum):
@@ -28,6 +30,7 @@ class AuditStatus(StrEnum):
     SUCCESS = "success"
     BLOCKED = "blocked"
     ERROR = "error"
+    CLARIFICATION = "clarification"
 
 
 class AuditRecord(BaseModel):
@@ -42,6 +45,7 @@ class AuditRecord(BaseModel):
     operation: AuditOperation
     statement_type: str
     query_hash: str
+    prompt_hash: str | None = None
     validation_valid: bool
     executed: bool
     blocked: bool

@@ -42,6 +42,7 @@ class SqliteAuditRepository(AuditRepository):
         self._path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as connection:
             connection.executescript(_SCHEMA)
+            self._ensure_prompt_hash_column(connection)
 
     def append(self, record: AuditRecord) -> None:
         """Insert one event using bound values."""
@@ -50,10 +51,10 @@ class SqliteAuditRepository(AuditRepository):
                 """
                 INSERT INTO query_audit_events (
                     event_id, timestamp, tool_name, connection_id, operation,
-                    statement_type, query_hash, validation_valid, executed,
+                    statement_type, query_hash, prompt_hash, validation_valid, executed,
                     blocked, blocked_reason_codes, duration_ms, row_count,
                     status, error_code
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record.event_id,
@@ -63,6 +64,7 @@ class SqliteAuditRepository(AuditRepository):
                     record.operation.value,
                     record.statement_type,
                     record.query_hash,
+                    record.prompt_hash,
                     record.validation_valid,
                     record.executed,
                     record.blocked,
@@ -81,7 +83,7 @@ class SqliteAuditRepository(AuditRepository):
                 """
                 SELECT
                     event_id, timestamp, tool_name, connection_id, operation,
-                    statement_type, query_hash, validation_valid, executed,
+                    statement_type, query_hash, prompt_hash, validation_valid, executed,
                     blocked, blocked_reason_codes, duration_ms, row_count,
                     status, error_code
                 FROM query_audit_events
@@ -104,3 +106,9 @@ class SqliteAuditRepository(AuditRepository):
         connection.execute("PRAGMA journal_mode = WAL")
         connection.execute("PRAGMA busy_timeout = 5000")
         return connection
+
+    @staticmethod
+    def _ensure_prompt_hash_column(connection: sqlite3.Connection) -> None:
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(query_audit_events)")}
+        if "prompt_hash" not in columns:
+            connection.execute("ALTER TABLE query_audit_events ADD COLUMN prompt_hash TEXT")

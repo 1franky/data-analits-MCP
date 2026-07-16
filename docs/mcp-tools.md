@@ -1,8 +1,8 @@
 # Herramientas MCP disponibles
 
-El catálogo contiene 15 tools y es idéntico por Streamable HTTP en `/mcp` y por STDIO mediante
-`data-platform-mcp-stdio`. Los modelos se serializan como datos estructurados. Los seis envelopes
-añadidos en Sprint 4 incluyen `contract_version: "1.0.0"`; consulta la
+El catálogo contiene 18 tools y es idéntico por Streamable HTTP en `/mcp` y por STDIO mediante
+`data-platform-mcp-stdio`. Los modelos se serializan como datos estructurados. Los envelopes
+añadidos en Sprint 4 y Sprint 5 incluyen `contract_version: "1.0.0"`; consulta la
 [política de compatibilidad](mcp-contracts.md). No existe ninguna herramienta que ejecute
 escrituras.
 
@@ -28,7 +28,7 @@ Verifica el proceso MCP sin depender de PostgreSQL ni del catálogo.
   "contract_version": "1.0.0",
   "status": "ok",
   "service": "data-platform-mcp",
-  "server_version": "0.5.0"
+  "server_version": "0.6.0"
 }
 ```
 
@@ -257,3 +257,59 @@ Valida un `SELECT` y devuelve su plan PostgreSQL JSON sin ejecutar la consulta e
 - Devuelve `explained`, `analyze: false`, validación, SQL limitado, plan, duración y error.
 - El cliente no entrega `EXPLAIN`; la opción fija se añade dentro del adaptador después de validar.
 - DML, DDL, múltiples sentencias y un `EXPLAIN` suministrado directamente se bloquean.
+
+## `generate_sql`
+
+Genera una sentencia SQL desde una pregunta en lenguaje natural usando el catálogo cacheado como
+contexto, sin ejecutarla.
+
+- Parámetros: `connection_id` y `question` (1 a 4000 caracteres).
+- Respuesta: `contract_version`, `connection_id`, `question`, `outcome`, `generated`,
+  `clarification`, `error_code` y `message`.
+- `outcome` es `generated`, `clarification_required` o `generation_failed`.
+- `generated.validation` es el mismo `SqlValidationResult` que produce `validate_sql`: un SQL
+  generado que resulte DML/DDL queda con `executable: false` y las razones de bloqueo habituales.
+- `clarification.candidates` solo incluye tablas y columnas que existen literalmente en el
+  snapshot cacheado de la conexión; el servidor descarta cualquier objeto inventado por el modelo.
+- Requiere `generation.enabled: true` y un proveedor configurado; si no, devuelve
+  `GENERATION_NOT_CONFIGURED`.
+- Registra un evento de auditoría con hash de la pregunta y del SQL, nunca su texto.
+
+## `generate_and_execute_query`
+
+Genera SQL y, solo si resulta ejecutable, lo ejecuta bajo la misma revalidación completa que
+`execute_read_query`.
+
+- Parámetros: `connection_id`, `question`, `max_rows` y `timeout_seconds` opcionales.
+- Respuesta: igual que `generate_sql`, más un campo `execution` con la forma de
+  `QueryExecutionResult` cuando el SQL generado fue ejecutable.
+- Si `outcome` es `clarification_required` o `generation_failed`, `execution` es siempre `null` y
+  no se invoca al adaptador de base de datos.
+- El SQL generado nunca se ejecuta con la validación informativa de `generate_sql`: se revalida
+  íntegramente dentro de `execute_read_query`, por lo que un SQL de escritura queda bloqueado con
+  `SQL_VALIDATION_BLOCKED` igual que si lo hubiera escrito un cliente humano.
+
+## `generate_report`
+
+Genera SQL desde una pregunta en lenguaje natural, la ejecuta bajo la misma revalidación completa
+que `generate_and_execute_query`, y entrega el resultado como un archivo descargable.
+
+- Parámetros: `connection_id`, `question`, `format` (`csv`, `json`, `xlsx` o `pdf`) y `max_rows`
+  opcional (1 a 10000).
+- Respuesta: `contract_version`, `connection_id`, `question`, `format`, `outcome`, `period`,
+  `applied_filters`, `generated_at`, `row_count`, `is_empty`, `truncation`, `payload`,
+  `clarification`, `error_code` y `message`.
+- Los periodos relativos ("el mes pasado", "últimos 7 días", "este trimestre", etc.) se resuelven de
+  forma **determinística en Python**, nunca por el LLM; `period.label` y `period.start_date`/
+  `end_date` muestran siempre el rango exacto usado.
+- Un resultado con cero filas no es un error: `is_empty: true` y el archivo se genera igual, vacío.
+- `payload` entrega el archivo **en línea**, codificado en `content_base64`, sin usar disco ni
+  almacenamiento temporal. Si excede `reporting.max_inline_bytes`, la política
+  `on_size_exceeded` trunca filas (`truncation.truncated: true`) o rechaza la solicitud con
+  `REPORT_TOO_LARGE`.
+- Si `outcome` no es `generated`, o el SQL generado resulta bloqueado, `payload` es siempre `null` y
+  no se exporta nada.
+- Requiere `reporting.enabled: true` y el formato solicitado dentro de `reporting.allowed_formats`;
+  si no, devuelve `REPORTING_NOT_CONFIGURED` o `REPORT_FORMAT_NOT_SUPPORTED`.
+- Registra un evento de auditoría con hash de la pregunta y del SQL, nunca su texto ni el archivo
+  generado.

@@ -196,6 +196,11 @@ class CatalogService:
             cache_statuses=self.get_cache_status(connection_id),
         )
 
+    def get_snapshot(self, connection_id: str) -> CatalogSnapshot:
+        """Return the full cached snapshot used to build LLM generation context."""
+        snapshot, _status = self._snapshot_context(connection_id)
+        return snapshot
+
     def list_schemas(self, connection_id: str) -> SchemaListResponse:
         """List schemas from one valid cached snapshot."""
         snapshot, status = self._snapshot_context(connection_id)

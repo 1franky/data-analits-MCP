@@ -5,7 +5,8 @@ from hashlib import sha256
 from uuid import uuid4
 
 from app.models.audit import AuditConfig, AuditOperation, AuditRecord, AuditStatus
-from app.models.query import SqlValidationResult
+from app.models.generation import GenerationOutcome
+from app.models.query import SqlStatementType, SqlValidationResult
 from app.repositories import AuditRepository
 
 
@@ -56,6 +57,63 @@ class AuditService:
             executed=executed,
             blocked=blocked,
             blocked_reason_codes=tuple(issue.code for issue in validation.blocked_reasons),
+            duration_ms=round(duration_ms, 3),
+            row_count=row_count,
+            status=status,
+            error_code=error_code,
+        )
+        self._repository.append(record)
+        return record
+
+    def record_generation(
+        self,
+        *,
+        tool_name: str,
+        connection_id: str,
+        operation: AuditOperation,
+        prompt: str,
+        sql: str | None,
+        outcome: GenerationOutcome,
+        validation: SqlValidationResult | None,
+        executed: bool,
+        duration_ms: float,
+        row_count: int | None,
+        error_code: str | None = None,
+    ) -> AuditRecord | None:
+        """Append one LLM-assisted event; only hashes represent prompt and SQL."""
+        if not self._enabled:
+            return None
+        blocked = validation is not None and not validation.executable
+        status = (
+            AuditStatus.CLARIFICATION
+            if outcome is GenerationOutcome.CLARIFICATION_REQUIRED
+            else AuditStatus.ERROR
+            if error_code is not None and not blocked
+            else AuditStatus.BLOCKED
+            if blocked
+            else AuditStatus.SUCCESS
+        )
+        record = AuditRecord(
+            event_id=str(uuid4()),
+            timestamp=datetime.now(UTC),
+            tool_name=tool_name,
+            connection_id=connection_id,
+            operation=operation,
+            statement_type=(
+                validation.statement_type.value
+                if validation is not None
+                else SqlStatementType.UNKNOWN.value
+            ),
+            query_hash=sha256((sql or "").encode("utf-8")).hexdigest(),
+            prompt_hash=sha256(prompt.encode("utf-8")).hexdigest(),
+            validation_valid=validation.valid if validation is not None else False,
+            executed=executed,
+            blocked=blocked,
+            blocked_reason_codes=(
+                tuple(issue.code for issue in validation.blocked_reasons)
+                if validation is not None
+                else ()
+            ),
             duration_ms=round(duration_ms, 3),
             row_count=row_count,
             status=status,

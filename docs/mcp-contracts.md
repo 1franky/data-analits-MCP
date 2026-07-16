@@ -4,7 +4,7 @@
 
 Data Platform MCP distingue dos versiones:
 
-- servidor `0.5.0`: versión de la aplicación, imagen y servidor FastMCP;
+- servidor `0.6.0`: versión de la aplicación, imagen y servidor FastMCP;
 - contrato `1.0.0`: versión semántica de los envelopes MCP introducidos en Sprint 4.
 
 `contract_version` aparece en la raíz de `health_check`, `get_connection_capabilities`,
