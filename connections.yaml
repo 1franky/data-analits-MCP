@@ -39,6 +39,7 @@ audit:
 generation:
   enabled: false
   max_context_tables: 20
+  max_definition_chars: 8000
   # provider:
   #   type: openai_compatible
   #   base_url: http://llm-gateway:8080/v1

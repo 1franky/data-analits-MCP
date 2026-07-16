@@ -81,6 +81,8 @@ class ConnectionCapabilities(BaseModel):
     foreign_keys: bool = False
     execute_read_query: bool = False
     explain_query: bool = False
+    list_procedures: bool = False
+    list_triggers: bool = False
 
 
 class ConnectionConfig(BaseModel):
@@ -259,6 +261,37 @@ class UniqueKeyInfo(BaseModel):
 
     name: str
     columns: tuple[str, ...]
+
+
+class ProcedureInfo(BaseModel):
+    """Callable routine metadata sourced from pg_proc catalogs."""
+
+    model_config = ConfigDict(frozen=True, populate_by_name=True, serialize_by_alias=True)
+
+    schema_name: str = Field(alias="schema")
+    name: str
+    kind: Literal["function", "procedure"]
+    language: str
+    arguments: str
+    return_type: str | None = None
+    definition: str
+    comment: str | None = None
+
+
+class TriggerInfo(BaseModel):
+    """Trigger metadata bound to exactly one table and function."""
+
+    model_config = ConfigDict(frozen=True, populate_by_name=True, serialize_by_alias=True)
+
+    schema_name: str = Field(alias="schema")
+    name: str
+    table: str
+    timing: Literal["BEFORE", "AFTER", "INSTEAD OF"]
+    events: tuple[Literal["INSERT", "UPDATE", "DELETE", "TRUNCATE"], ...]
+    function_schema: str
+    function_name: str
+    definition: str
+    comment: str | None = None
 
 
 class TableDescription(BaseModel):

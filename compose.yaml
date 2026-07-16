@@ -1,6 +1,6 @@
 services:
   data-platform-mcp:
-    image: data-platform-mcp:${IMAGE_TAG:-0.6.0}
+    image: data-platform-mcp:${IMAGE_TAG:-0.7.0}
     build:
       context: .
       dockerfile: Dockerfile

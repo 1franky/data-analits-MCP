@@ -2,16 +2,19 @@
 
 Data Platform MCP es un servicio independiente del proveedor de LLM para explorar fuentes de datos
 desde clientes compatibles con Model Context Protocol (MCP), incluido Open WebUI. El proyecto se
-construye por sprints y actualmente implementa el **Sprint 5**: generación de SQL asistida por LLM
-sobre el catálogo cacheado, ejecución orquestada bajo revalidación completa, aclaraciones ante
-ambigüedad y reportes XLSX/PDF/CSV/JSON desde lenguaje natural, todo opcional y deshabilitado por
-defecto, además de la exploración MCP completa y las capacidades seguras de conexión, catálogo y
-SQL de los sprints anteriores.
+construye por sprints y actualmente implementa el **Sprint 6**: lectura cacheada de procedimientos/
+funciones y triggers PostgreSQL, y su explicación en lenguaje natural vía LLM separando hechos
+verificables de inferencias, además del **Sprint 5** (generación de SQL asistida por LLM sobre el
+catálogo cacheado, ejecución orquestada bajo revalidación completa, aclaraciones ante ambigüedad y
+reportes XLSX/PDF/CSV/JSON desde lenguaje natural, todo opcional y deshabilitado por defecto), y la
+exploración MCP completa y las capacidades seguras de conexión, catálogo y SQL de los sprints
+anteriores.
 
-No existe todavía RAG documental, lectura de procedimientos/triggers ni ejecución de escritura.
-El catálogo nunca almacena filas de negocio y la auditoría guarda metadatos de seguridad — nunca el
-SQL, la pregunta en lenguaje natural, los parámetros, los valores devueltos ni los archivos de
-reporte generados.
+No existe todavía RAG documental ni ejecución de escritura. Ningún procedimiento ni trigger se
+ejecuta jamás: solo se leen sus definiciones desde catálogos internos de PostgreSQL. El catálogo
+nunca almacena filas de negocio y la auditoría guarda metadatos de seguridad — nunca el SQL, la
+pregunta en lenguaje natural, los parámetros, los valores devueltos, las definiciones de objetos ni
+los archivos de reporte generados.
 
 ## Arquitectura actual
 
@@ -75,7 +78,7 @@ Respuesta esperada:
 {
   "status": "ok",
   "service": "data-platform-mcp",
-  "version": "0.6.0"
+  "version": "0.7.0"
 }
 ```
 
@@ -162,7 +165,7 @@ Variables Compose incluidas en `.env.example`:
 | `MCP_BIND_ADDRESS` | `127.0.0.1` | Interfaz local del MCP/API. |
 | `MCP_PORT` | `8000` | Puerto local del MCP/API. |
 | `LOG_LEVEL` | `info` | Nivel de log de Uvicorn. |
-| `IMAGE_TAG` | `0.6.0` | Etiqueta local de la imagen. |
+| `IMAGE_TAG` | `0.7.0` | Etiqueta local de la imagen. |
 | `CATALOG_DB_PATH` | `/app/data/catalog.db` | SQLite persistente de metadata técnica. |
 | `AUDIT_DB_PATH` | `/app/data/audit.db` | SQLite persistente de eventos SQL sin contenido sensible. |
 | `POSTGRES_IMAGE_TAG` | `17.10` | Etiqueta local del laboratorio PostgreSQL. |
@@ -239,7 +242,7 @@ servicio directamente a Internet. Consulta [seguridad](docs/security.md).
 ## Roadmap
 
 El plan se mantiene en [TASKS.md](TASKS.md). Sprint 5 (generación de SQL mediante lenguaje natural
-sobre metadata real, aclaraciones ante ambigüedad y reportes XLSX/PDF/CSV/JSON) ya está implementado
-y deshabilitado por defecto. El siguiente hito, que no se iniciará sin aprobación, es Sprint 6:
-lectura de procedimientos y triggers con explicaciones asistidas por LLM. Después siguen RAG, Open
-WebUI, motores adicionales y hardening.
+sobre metadata real, aclaraciones ante ambigüedad y reportes XLSX/PDF/CSV/JSON) y Sprint 6 (lectura
+de procedimientos/triggers y explicaciones asistidas por LLM) ya están implementados; la generación
+LLM sigue deshabilitada por defecto. El siguiente hito, que no se iniciará sin aprobación, es
+Sprint 7: RAG documental. Después siguen Open WebUI, motores adicionales y hardening.

@@ -22,6 +22,7 @@ class AuditOperation(StrEnum):
     EXPLAIN = "explain"
     GENERATE = "generate"
     REPORT = "report"
+    EXPLAIN_OBJECT = "explain_object"
 
 
 class AuditStatus(StrEnum):

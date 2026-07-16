@@ -2,8 +2,8 @@
 
 Estados permitidos: `TODO`, `IN_PROGRESS`, `BLOCKED`, `DONE`.
 
-Sprint 5 fue aprobado explícitamente, sus cuatro historias (HU-501 a HU-504) quedan implementadas
-en la rama actual y su validación reproducible se registró más abajo. No se inicia Sprint 6 ni
+Sprint 6 fue aprobado explícitamente, sus tres historias (HU-601 a HU-603) quedan implementadas en
+la rama actual y su validación reproducible se registró más abajo. No se inicia Sprint 7 ni
 historias posteriores hasta recibir aprobación explícita.
 
 ## Sprint 0 — Descubrimiento, arquitectura y bootstrap
@@ -61,9 +61,9 @@ historias posteriores hasta recibir aprobación explícita.
 
 | Historia | Estado | Dependencias | Archivos previstos | Pruebas requeridas | Criterios de aceptación | Bloqueos |
 |---|---|---|---|---|---|---|
-| HU-601 Leer procedimientos | TODO | Adaptador PostgreSQL | Servicio/tool de objetos | Listado/definición; cero ejecución | Parámetros/dependencias cuando existan | Espera soporte adaptador |
-| HU-602 Leer triggers | TODO | Adaptador PostgreSQL | Servicio/tool de triggers | Definición y asociación a tabla | Recupera sin ejecutar | Espera soporte adaptador |
-| HU-603 Explicar objetos | TODO | HU-601–602, flujo LLM | Servicio de explicación | Hechos frente a inferencias | Propósito, entradas, tablas, reglas y riesgos | Definir integración LLM |
+| HU-601 Leer procedimientos | DONE | Adaptador PostgreSQL | Servicio/tool de objetos | Listado/definición; cero ejecución | Parámetros/dependencias cuando existan | Ninguno |
+| HU-602 Leer triggers | DONE | Adaptador PostgreSQL | Servicio/tool de triggers | Definición y asociación a tabla | Recupera sin ejecutar | Ninguno |
+| HU-603 Explicar objetos | DONE | HU-601–602, flujo LLM | Servicio de explicación | Hechos frente a inferencias | Propósito, entradas, tablas, reglas y riesgos | Ninguno |
 
 ## Sprint 7 — RAG documental
 
@@ -240,4 +240,40 @@ Nota: generation.enabled y reporting.enabled quedan en false por defecto (sin pr
 laboratorio local); generate_sql, generate_and_execute_query y generate_report se validan por
 contrato MCP (presencia, input/output schema) y por su suite unitaria con FakeLlmProvider, no con
 una llamada real a un proveedor LLM en este entorno.
+```
+
+## Evidencia de validación de Sprint 6
+
+Validación ejecutada el 2026-07-16 sobre Docker Desktop ARM64:
+
+```text
+Python del target test: PASS — Python 3.12.13, linux/arm64
+pytest unitario/contratos/STDIO: PASS — 205 passed, 12 integration deselected in 5.97s
+pytest integración PostgreSQL: PASS — 12 passed, 205 deselected (ejecutado en la red ai-platform)
+ruff check: PASS — All checks passed
+ruff format --check: PASS — 122 files already formatted
+mypy app tests: PASS — no issues found in 122 source files
+docker compose config --quiet: PASS
+docker build --target test: PASS — image sha256:4afc835f8472...
+docker compose down -v / up: PASS — laboratorio recreado desde volumen vacío para aplicar el seed
+  de procedimientos/triggers (database/init/05-demo-objects.sql); ambos servicios healthy, versión
+  0.7.0 (imagen sha256:0007a2080b2a...)
+MCP HTTP smoke: PASS — 21 tools (scripts/smoke_mcp.py ampliado), contrato 1.0.0
+procedimientos/triggers reales: PASS — list_procedures devuelve actualizar_stock_producto y
+  resumen_ventas_cliente; list_triggers devuelve trg_ventas_actualiza_stock (AFTER INSERT →
+  actualizar_stock_producto), verificado con un cliente MCP real contra el snapshot recién
+  refrescado
+cero ejecución: PASS — list_procedures/list_triggers solo leen pg_proc/pg_trigger/
+  pg_get_functiondef/pg_get_triggerdef; ninguna consulta invoca CALL ni ejecuta el cuerpo del
+  objeto; sesión y rol readonly sin cambios
+explicación de objetos: PASS — objeto inexistente en el catálogo cacheado nunca llama al proveedor
+  LLM (provider.calls == []); trigger solicitado sin table se rechaza antes de tocar catálogo o LLM
+auditoría de explicación: PASS — ni la definición SQL real ni el purpose/facts devueltos por el LLM
+  aparecen en texto plano en la base de auditoría; solo hash SHA-256 (prompt_hash, query_hash)
+runtime restrictions: PASS — UID 10001, raíz read-only, cap_drop ALL, no-new-privileges
+runtime platform: PASS — MCP y laboratorio linux/arm64 sobre red externa ai-platform
+
+Nota: generation.enabled queda en false por defecto (sin proveedor LLM real en el laboratorio
+local); explain_database_object se valida por contrato MCP y por su suite unitaria con
+FakeLlmProvider, igual que generate_sql/generate_report en Sprint 5.
 ```

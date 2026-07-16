@@ -15,10 +15,12 @@ from app.models.connections import (
     ConnectionsConfig,
     ConnectionTestResult,
     ConnectionType,
+    ProcedureInfo,
     QueryLanguage,
     SchemaInfo,
     TableDescription,
     TableInfo,
+    TriggerInfo,
 )
 from app.models.query import (
     AdapterQueryPlan,
@@ -82,6 +84,16 @@ class QueryStubAdapter(SqlDatabaseAdapter):
             primary_key=(),
             foreign_keys=(),
         )
+
+    def list_procedures(self, schema: str | None = None) -> tuple[ProcedureInfo, ...]:
+        return ()
+
+    def list_triggers(
+        self,
+        schema: str | None = None,
+        table: str | None = None,
+    ) -> tuple[TriggerInfo, ...]:
+        return ()
 
     def execute_read_query(
         self,

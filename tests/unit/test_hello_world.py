@@ -5,6 +5,7 @@ from fastmcp import Client
 
 from app.tools.hello import hello_world
 from app.tools.server import mcp
+from tests.unit.test_mcp_contracts import EXPECTED_TOOLS
 
 
 @pytest.mark.parametrize(
@@ -27,24 +28,5 @@ async def test_hello_world_is_registered_and_callable_over_mcp() -> None:
         tools = await client.list_tools()
         result = await client.call_tool("hello_world", {"name": "Open WebUI"})
 
-    assert {tool.name for tool in tools} == {
-        "describe_table",
-        "generate_and_execute_query",
-        "generate_report",
-        "generate_sql",
-        "get_connection_capabilities",
-        "hello_world",
-        "health_check",
-        "execute_read_query",
-        "explain_query",
-        "get_schema_cache_status",
-        "list_connections",
-        "list_relationships",
-        "list_schemas",
-        "list_tables",
-        "refresh_schema_cache",
-        "search_catalog",
-        "test_connection",
-        "validate_sql",
-    }
+    assert {tool.name for tool in tools} == EXPECTED_TOOLS
     assert result.data == {"message": "Hello, Open WebUI!"}

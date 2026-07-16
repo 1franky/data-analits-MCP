@@ -123,6 +123,18 @@ class LlmGenerationParseError(DataPlatformError):
         )
 
 
+class LlmExplanationParseError(DataPlatformError):
+    """Raised when the LLM response cannot be parsed as a valid explanation payload."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code="EXPLANATION_RESPONSE_PARSE_ERROR",
+            message=(
+                "La respuesta del proveedor LLM no se pudo interpretar como explicación válida."
+            ),
+        )
+
+
 class ReportingNotConfiguredError(DataPlatformError):
     """Raised when report generation is requested without being enabled."""
 

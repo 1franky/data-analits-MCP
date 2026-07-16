@@ -25,10 +25,12 @@ from app.models.connections import (
     ConnectionConfig,
     ConnectionTestResult,
     ForeignKeyInfo,
+    ProcedureInfo,
     QueryLanguage,
     SchemaInfo,
     TableDescription,
     TableInfo,
+    TriggerInfo,
     UniqueKeyInfo,
 )
 from app.models.query import (
@@ -65,6 +67,8 @@ class PostgresAdapter(SqlDatabaseAdapter):
         foreign_keys=True,
         execute_read_query=True,
         explain_query=True,
+        list_procedures=True,
+        list_triggers=True,
     )
 
     def __init__(self, config: ConnectionConfig, password: SecretStr) -> None:
@@ -188,6 +192,120 @@ class PostgresAdapter(SqlDatabaseAdapter):
             primary_key=primary_key,
             unique_keys=unique_keys,
             foreign_keys=foreign_keys,
+        )
+
+    def list_procedures(self, schema: str | None = None) -> tuple[ProcedureInfo, ...]:
+        """List visible functions and procedures from pg_proc, definitions included."""
+        query = """
+            SELECT
+                namespace.nspname AS schema_name,
+                proc.proname AS procedure_name,
+                CASE proc.prokind WHEN 'p' THEN 'procedure' ELSE 'function' END AS object_kind,
+                language.lanname AS proc_language,
+                pg_catalog.pg_get_function_arguments(proc.oid) AS arguments,
+                CASE
+                    WHEN proc.prokind = 'p' THEN NULL
+                    ELSE pg_catalog.pg_get_function_result(proc.oid)
+                END AS return_type,
+                pg_catalog.obj_description(proc.oid, 'pg_proc') AS comment,
+                pg_catalog.pg_get_functiondef(proc.oid) AS definition
+            FROM pg_catalog.pg_proc AS proc
+            INNER JOIN pg_catalog.pg_namespace AS namespace
+                ON namespace.oid = proc.pronamespace
+            INNER JOIN pg_catalog.pg_language AS language
+                ON language.oid = proc.prolang
+            WHERE proc.prokind IN ('f', 'p')
+              AND namespace.nspname NOT LIKE 'pg\\_%%' ESCAPE '\\'
+              AND namespace.nspname <> 'information_schema'
+              AND (%s::text IS NULL OR namespace.nspname = %s)
+              AND has_function_privilege(proc.oid, 'EXECUTE')
+            ORDER BY namespace.nspname, proc.proname
+        """
+        try:
+            with self._connect_readonly() as connection:
+                rows = connection.execute(query, (schema, schema)).fetchall()
+        except psycopg.Error:
+            self._raise_metadata_error()
+        return tuple(
+            ProcedureInfo(
+                schema=cast(str, row["schema_name"]),
+                name=cast(str, row["procedure_name"]),
+                kind=cast(Literal["function", "procedure"], row["object_kind"]),
+                language=cast(str, row["proc_language"]),
+                arguments=cast(str, row["arguments"]),
+                return_type=cast(str | None, row["return_type"]),
+                comment=cast(str | None, row["comment"]),
+                definition=cast(str, row["definition"]),
+            )
+            for row in rows
+        )
+
+    def list_triggers(
+        self,
+        schema: str | None = None,
+        table: str | None = None,
+    ) -> tuple[TriggerInfo, ...]:
+        """List visible triggers from pg_trigger, joined to table and function."""
+        query = """
+            SELECT
+                namespace.nspname AS schema_name,
+                trigger_row.tgname AS trigger_name,
+                relation.relname AS table_name,
+                CASE
+                    WHEN (trigger_row.tgtype::integer & 64) <> 0 THEN 'INSTEAD OF'
+                    WHEN (trigger_row.tgtype::integer & 2) <> 0 THEN 'BEFORE'
+                    ELSE 'AFTER'
+                END AS timing,
+                array_remove(ARRAY[
+                    CASE WHEN (trigger_row.tgtype::integer & 4) <> 0 THEN 'INSERT' END,
+                    CASE WHEN (trigger_row.tgtype::integer & 8) <> 0 THEN 'DELETE' END,
+                    CASE WHEN (trigger_row.tgtype::integer & 16) <> 0 THEN 'UPDATE' END,
+                    CASE WHEN (trigger_row.tgtype::integer & 32) <> 0 THEN 'TRUNCATE' END
+                ], NULL) AS trigger_events,
+                function_namespace.nspname AS function_schema,
+                function_row.proname AS function_name,
+                pg_catalog.obj_description(trigger_row.oid, 'pg_trigger') AS comment,
+                pg_catalog.pg_get_triggerdef(trigger_row.oid) AS definition
+            FROM pg_catalog.pg_trigger AS trigger_row
+            INNER JOIN pg_catalog.pg_class AS relation
+                ON relation.oid = trigger_row.tgrelid
+            INNER JOIN pg_catalog.pg_namespace AS namespace
+                ON namespace.oid = relation.relnamespace
+            INNER JOIN pg_catalog.pg_proc AS function_row
+                ON function_row.oid = trigger_row.tgfoid
+            INNER JOIN pg_catalog.pg_namespace AS function_namespace
+                ON function_namespace.oid = function_row.pronamespace
+            WHERE NOT trigger_row.tgisinternal
+              AND namespace.nspname NOT LIKE 'pg\\_%%' ESCAPE '\\'
+              AND namespace.nspname <> 'information_schema'
+              AND (%s::text IS NULL OR namespace.nspname = %s)
+              AND (%s::text IS NULL OR relation.relname = %s)
+              AND has_table_privilege(relation.oid, 'SELECT')
+            ORDER BY namespace.nspname, relation.relname, trigger_row.tgname
+        """
+        try:
+            with self._connect_readonly() as connection:
+                rows = connection.execute(query, (schema, schema, table, table)).fetchall()
+        except psycopg.Error:
+            self._raise_metadata_error()
+        return tuple(
+            TriggerInfo(
+                schema=cast(str, row["schema_name"]),
+                name=cast(str, row["trigger_name"]),
+                table=cast(str, row["table_name"]),
+                timing=cast(Literal["BEFORE", "AFTER", "INSTEAD OF"], row["timing"]),
+                events=tuple(
+                    cast(
+                        "list[Literal['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE']]",
+                        row["trigger_events"],
+                    )
+                ),
+                function_schema=cast(str, row["function_schema"]),
+                function_name=cast(str, row["function_name"]),
+                comment=cast(str | None, row["comment"]),
+                definition=cast(str, row["definition"]),
+            )
+            for row in rows
         )
 
     def execute_read_query(
