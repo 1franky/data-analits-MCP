@@ -83,3 +83,81 @@ class CatalogSnapshotNotFoundError(DataPlatformError):
                 "ejecuta refresh_schema_cache primero."
             ),
         )
+
+
+class GenerationNotConfiguredError(DataPlatformError):
+    """Raised when generation is requested without an enabled provider."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code="GENERATION_NOT_CONFIGURED",
+            message="La generación de SQL por lenguaje natural no está configurada o habilitada.",
+        )
+
+
+class GenerationRequestError(DataPlatformError):
+    """Raised when a generation request violates its public contract."""
+
+
+class GenerationProviderNotAvailableError(DataPlatformError):
+    """Raised when no LLM provider is registered for the configured type."""
+
+    def __init__(self, provider_type: str) -> None:
+        super().__init__(
+            code="GENERATION_PROVIDER_NOT_AVAILABLE",
+            message=f"No existe un proveedor LLM disponible para '{provider_type}'.",
+        )
+
+
+class GenerationProviderError(DataPlatformError):
+    """Raised on LLM provider timeouts, transport errors or invalid responses."""
+
+
+class LlmGenerationParseError(DataPlatformError):
+    """Raised when the LLM response cannot be parsed as a valid generation payload."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code="GENERATION_RESPONSE_PARSE_ERROR",
+            message="La respuesta del proveedor LLM no se pudo interpretar como generación válida.",
+        )
+
+
+class ReportingNotConfiguredError(DataPlatformError):
+    """Raised when report generation is requested without being enabled."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code="REPORTING_NOT_CONFIGURED",
+            message="La generación de reportes no está habilitada.",
+        )
+
+
+class ReportFormatNotSupportedError(DataPlatformError):
+    """Raised when a requested report format is outside the configured allowlist."""
+
+    def __init__(self, format_value: str) -> None:
+        super().__init__(
+            code="REPORT_FORMAT_NOT_SUPPORTED",
+            message=f"El formato de reporte '{format_value}' no está permitido.",
+        )
+
+
+class ReportPeriodInvalidError(DataPlatformError):
+    """Raised when a custom report period is missing an explicit date range."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code="REPORT_PERIOD_INVALID",
+            message="El periodo del reporte requiere fecha de inicio y fin explícitas.",
+        )
+
+
+class ReportTooLargeError(DataPlatformError):
+    """Raised when a report cannot fit the configured inline size budget."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code="REPORT_TOO_LARGE",
+            message="El reporte excede el tamaño máximo permitido, incluso truncado.",
+        )

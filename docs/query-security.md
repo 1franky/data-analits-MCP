@@ -89,6 +89,31 @@ Los eventos guardan ID/fecha, herramienta, conexión, operación, tipo, hash SHA
 códigos de bloqueo, duración, conteo, estado y error normalizado. No guardan SQL, parámetros,
 columnas ni filas. El repositorio SQLite es reemplazable mediante el contrato `AuditRepository`.
 
+## Generación asistida por LLM (Sprint 5)
+
+`generate_sql` y `generate_and_execute_query` construyen SQL a partir de una pregunta en
+lenguaje natural, usando exclusivamente el snapshot de catálogo ya cacheado (nunca filas de
+negocio) como contexto. El texto que produce el proveedor LLM **nunca se trata como SQL
+confiable**: pasa siempre por `QueryValidationService.validate()` igual que cualquier otro SQL de
+cliente, y `generate_and_execute_query` delega la ejecución en `QueryExecutionService.execute()`
+sin reutilizar la validación informativa previa, exactamente el mismo camino de revalidación
+completa que ya existe para `execute_read_query`. Un `DELETE`/`INSERT`/`DDL` "generado" queda
+marcado `executable: false` con las mismas razones estructuradas de esta política y nunca llega al
+adaptador.
+
+Si el modelo detecta ambigüedad (por ejemplo, un término que podría referirse a más de una tabla o
+columna del contexto), la respuesta es `outcome: clarification_required` con candidatos
+estructurados en vez de una suposición peligrosa. Cada candidato se valida contra el snapshot real
+del catálogo antes de devolverse al cliente: cualquier tabla o columna que el modelo mencione pero
+que no exista en el snapshot se descarta silenciosamente. Un resultado con aclaración nunca
+contiene una ejecución.
+
+El proveedor LLM se resuelve mediante un registry/factory análogo al de adaptadores de base de
+datos (`app/generation/registry.py`); el núcleo de generación no depende de un proveedor
+específico. La auditoría de generación (`AuditOperation.GENERATE`) nunca persiste la pregunta en
+lenguaje natural ni el SQL generado, solo hashes SHA-256 (`prompt_hash`, `query_hash`), igual que el
+resto de la auditoría de consultas.
+
 ## Ampliar la política
 
 Al aceptar una construcción nueva:

@@ -1,4 +1,4 @@
-"""Exercise the public Sprint 4 MCP contract through Streamable HTTP."""
+"""Exercise the public Sprint 4/5 MCP contract through Streamable HTTP."""
 
 import argparse
 import asyncio
@@ -13,6 +13,9 @@ EXPECTED_TOOLS = {
     "describe_table",
     "execute_read_query",
     "explain_query",
+    "generate_and_execute_query",
+    "generate_report",
+    "generate_sql",
     "get_connection_capabilities",
     "get_schema_cache_status",
     "health_check",

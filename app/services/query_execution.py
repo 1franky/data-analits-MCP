@@ -40,6 +40,7 @@ class QueryExecutionService:
         parameters: dict[str, QueryParameter] | None = None,
         max_rows: int | None = None,
         timeout_seconds: int | None = None,
+        tool_name: str = "execute_read_query",
     ) -> QueryExecutionResult:
         """Validate and execute one SELECT with effective connection/global limits."""
         config = self._connections.get_connection_config(connection_id)
@@ -52,7 +53,7 @@ class QueryExecutionService:
         )
         if not validation.executable or validation.normalized_sql is None:
             result = self._blocked_execution(connection_id, validation)
-            self._audit_execution(connection_id, sql, result)
+            self._audit_execution(connection_id, sql, result, tool_name)
             return result
 
         effective_rows = min(
@@ -79,7 +80,7 @@ class QueryExecutionService:
                 error_code="QUERY_CAPACITY_EXCEEDED",
                 message="No hay capacidad disponible para ejecutar otra consulta.",
             )
-            self._audit_execution(connection_id, sql, result)
+            self._audit_execution(connection_id, sql, result, tool_name)
             return result
 
         try:
@@ -117,7 +118,7 @@ class QueryExecutionService:
             )
         finally:
             self._capacity.release()
-        self._audit_execution(connection_id, sql, result)
+        self._audit_execution(connection_id, sql, result, tool_name)
         return result
 
     def explain(
@@ -252,9 +253,10 @@ class QueryExecutionService:
         connection_id: str,
         sql: str,
         result: QueryExecutionResult,
+        tool_name: str = "execute_read_query",
     ) -> None:
         self._audit.record(
-            tool_name="execute_read_query",
+            tool_name=tool_name,
             connection_id=connection_id,
             operation=AuditOperation.EXECUTE,
             sql=sql,

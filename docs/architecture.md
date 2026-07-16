@@ -4,8 +4,13 @@
 
 Sprint 4 expone la metadata PostgreSQL cacheada mediante herramientas MCP estructuradas y
 versionadas. Conserva validación SQL real, ejecución exclusivamente de lectura, `EXPLAIN` seguro,
-auditoría, configuración y catálogo persistente de sprints anteriores. No implementa generación
-mediante LLM, RAG, procedimientos, triggers ni escritura.
+auditoría, configuración y catálogo persistente de sprints anteriores. Sprint 5 añade generación de
+SQL asistida por LLM sobre el catálogo cacheado (`generate_sql`, `generate_and_execute_query`),
+solicitud estructurada de aclaraciones ante ambigüedad, y generación de reportes XLSX/PDF/CSV/JSON
+desde lenguaje natural (`generate_report`), entregados en línea como bytes base64 sin usar disco.
+Todo el bloque de generación es opcional y está deshabilitado por defecto, sin introducir ningún
+camino de ejecución que evite la validación existente. No implementa RAG, procedimientos, triggers
+ni escritura.
 
 ## Principios
 
@@ -24,21 +29,35 @@ mediante LLM, RAG, procedimientos, triggers ni escritura.
 
 ```mermaid
 flowchart LR
-    NetworkClient["Open WebUI u otro cliente MCP"] -->|"Streamable HTTP /mcp"| Tools["15 herramientas FastMCP"]
+    NetworkClient["Open WebUI u otro cliente MCP"] -->|"Streamable HTTP /mcp"| Tools["18 herramientas FastMCP"]
     LocalClient["Cliente MCP local"] -->|"STDIO"| Tools
     Operator["Operador"] -->|"GET /health"| API["FastAPI"]
     Tools --> CS["ConnectionService"]
     Tools --> Cat["CatalogService"]
     Tools --> Validator["QueryValidationService"]
     Tools --> Executor["QueryExecutionService"]
+    Tools --> Gen["GenerationService"]
+    Tools --> GenExec["GenerationExecutionService"]
+    Tools --> Report["ReportingService"]
     Executor --> Validator
     Executor --> CS
+    GenExec --> Gen
+    GenExec --> Executor
+    Report --> GenExec
+    Report --> ExpFactory["ReportExporterFactory"]
+    ExpFactory --> Exporters["CSV/JSON/XLSX/PDF"]
+    Gen --> Cat
+    Gen --> Validator
+    Gen --> LlmFactory["LlmProviderFactory"]
+    LlmFactory --> LlmProvider["OpenAiCompatibleProvider"]
     CS --> Config["Pydantic + connections.yaml"]
     CS --> Factory["AdapterFactory"]
     Factory --> PG["PostgresAdapter"]
     PG -->|"sesión y rol readonly"| DB["PostgreSQL / mcp_readonly"]
     Cat --> CatalogDB["Catálogo / SQLite"]
     Executor --> Audit["AuditService"]
+    Gen --> Audit
+    Report --> Audit
     Validator --> Policy["Política PostgreSQL / SQLGlot AST"]
     Audit --> AuditDB["Auditoría / SQLite"]
     Scheduler["CatalogScheduler"] --> Cat
@@ -47,14 +66,21 @@ flowchart LR
 ```
 
 - `app/config`: carga de YAML y normalización de errores.
-- `app/models`: contratos tipados de conexiones, catálogo, metadata MCP, validación, ejecución y
-  auditoría.
+- `app/models`: contratos tipados de conexiones, catálogo, metadata MCP, validación, ejecución,
+  auditoría, generación LLM y reportes.
 - `app/security`: reglas PostgreSQL aplicadas sobre el árbol sintáctico.
-- `app/services`: casos de uso de conexión, catálogo, validación, ejecución y auditoría.
+- `app/services`: casos de uso de conexión, catálogo, validación, ejecución, auditoría y generación
+  asistida por LLM.
 - `app/adapters`: contrato SQL, fábrica por registro y adaptación PostgreSQL.
+- `app/generation`: contrato de proveedor LLM, fábrica por registro, selección de contexto de
+  catálogo, construcción de prompts y parseo de la respuesta del modelo.
+- `app/reporting`: resolución determinística de periodos relativos (sin LLM) y exportadores
+  CSV/JSON/XLSX/PDF por registro, orquestados por `ReportingService` sobre
+  `GenerationExecutionService`.
 - `app/repositories`: contratos e implementaciones SQLite para catálogo y auditoría.
 - `app/scheduler`: actualización del catálogo en un worker thread sin bloquear ASGI.
-- `app/tools`: 15 herramientas; las nuevas respuestas de exploración usan el contrato MCP `1.0.0`.
+- `app/tools`: 18 herramientas; las respuestas de exploración, generación y reportes usan el
+  contrato MCP `1.0.0`.
 - `app/container.py`: composition root y dependencias cacheadas por proceso.
 
 El lifespan valida conexiones y secretos, inicializa ambas persistencias SQLite y arranca el
@@ -127,7 +153,7 @@ el entry point `data-platform-mcp-stdio` llama `mcp.run()` con el transporte STD
 Así ambos transportes comparten nombres, schemas de entrada/salida y versión del servidor.
 
 Los envelopes añadidos en Sprint 4 incluyen `contract_version: "1.0.0"`. El servidor se publica
-como `0.5.0`; un cambio de implementación no obliga a romper el contrato. Las pruebas consultan
+como `0.6.0`; un cambio de implementación no obliga a romper el contrato. Las pruebas consultan
 `list_tools`, fijan los 15 nombres y validan los JSON Schemas de entrada/salida. La política de
 compatibilidad y el catálogo completo están en [mcp-contracts.md](mcp-contracts.md) y
 [mcp-tools.md](mcp-tools.md).

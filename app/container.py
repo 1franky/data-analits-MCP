@@ -6,7 +6,12 @@ from pathlib import Path
 
 from app.adapters.registry import create_adapter_factory
 from app.config import ConnectionsConfigLoader
+from app.generation.factory import create_llm_provider_factory
+from app.generation.registry import LlmProviderFactory
 from app.models.connections import ConnectionsConfig
+from app.reporting.exporters.factory import create_report_exporter_factory
+from app.reporting.exporters.registry import ReportExporterFactory
+from app.reporting.service import ReportingService
 from app.repositories import (
     AuditRepository,
     CatalogRepository,
@@ -18,6 +23,8 @@ from app.services import (
     AuditService,
     CatalogService,
     ConnectionService,
+    GenerationExecutionService,
+    GenerationService,
     QueryExecutionService,
     QueryValidationService,
 )
@@ -107,4 +114,50 @@ def get_query_execution_service() -> QueryExecutionService:
         validator=get_query_validation_service(),
         audit=get_audit_service(),
         policy=get_connections_config().query,
+    )
+
+
+@lru_cache(maxsize=1)
+def get_llm_provider_factory() -> LlmProviderFactory:
+    """Build the isolated registry of implemented LLM providers."""
+    return create_llm_provider_factory()
+
+
+@lru_cache(maxsize=1)
+def get_generation_service() -> GenerationService:
+    """Build the natural-language SQL generation service."""
+    return GenerationService(
+        connections=get_connection_service(),
+        catalog=get_catalog_service(),
+        provider_factory=get_llm_provider_factory(),
+        validator=get_query_validation_service(),
+        config=get_connections_config().generation,
+        environment=os.environ,
+        audit=get_audit_service(),
+    )
+
+
+@lru_cache(maxsize=1)
+def get_generation_execution_service() -> GenerationExecutionService:
+    """Build the generation-then-execution orchestration service."""
+    return GenerationExecutionService(
+        generation=get_generation_service(),
+        execution=get_query_execution_service(),
+    )
+
+
+@lru_cache(maxsize=1)
+def get_report_exporter_factory() -> ReportExporterFactory:
+    """Build the isolated registry of implemented report exporters."""
+    return create_report_exporter_factory()
+
+
+@lru_cache(maxsize=1)
+def get_reporting_service() -> ReportingService:
+    """Build the natural-language report generation service."""
+    return ReportingService(
+        generation_execution=get_generation_execution_service(),
+        exporter_factory=get_report_exporter_factory(),
+        config=get_connections_config().reporting,
+        audit=get_audit_service(),
     )

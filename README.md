@@ -2,18 +2,21 @@
 
 Data Platform MCP es un servicio independiente del proveedor de LLM para explorar fuentes de datos
 desde clientes compatibles con Model Context Protocol (MCP), incluido Open WebUI. El proyecto se
-construye por sprints y actualmente implementa el **Sprint 4**: exploración MCP completa de
-schemas, tablas y relaciones mediante contratos estructurados y versionados, además de las
-capacidades seguras de conexión, catálogo y SQL de los sprints anteriores.
+construye por sprints y actualmente implementa el **Sprint 5**: generación de SQL asistida por LLM
+sobre el catálogo cacheado, ejecución orquestada bajo revalidación completa, aclaraciones ante
+ambigüedad y reportes XLSX/PDF/CSV/JSON desde lenguaje natural, todo opcional y deshabilitado por
+defecto, además de la exploración MCP completa y las capacidades seguras de conexión, catálogo y
+SQL de los sprints anteriores.
 
-No existe todavía generación de consultas desde lenguaje natural, RAG ni ejecución de escritura.
-El catálogo nunca almacena filas de negocio y la auditoría guarda metadatos de seguridad, no el SQL,
-los parámetros ni los valores devueltos.
+No existe todavía RAG documental, lectura de procedimientos/triggers ni ejecución de escritura.
+El catálogo nunca almacena filas de negocio y la auditoría guarda metadatos de seguridad — nunca el
+SQL, la pregunta en lenguaje natural, los parámetros, los valores devueltos ni los archivos de
+reporte generados.
 
 ## Arquitectura actual
 
 El mismo servidor FastMCP se expone por Streamable HTTP dentro del proceso ASGI y por STDIO para
-clientes locales. La superficie pública contiene 15 herramientas:
+clientes locales. La superficie pública contiene 18 herramientas:
 
 - `GET /health`: liveness administrativo de FastAPI.
 - `/mcp`: transporte MCP Streamable HTTP de FastMCP.
@@ -32,6 +35,10 @@ clientes locales. La superficie pública contiene 15 herramientas:
 - `validate_sql`: parsea, clasifica y explica por qué una sentencia puede o no ejecutarse.
 - `execute_read_query`: ejecuta un único `SELECT` validado con límites de tiempo, filas y bytes.
 - `explain_query`: devuelve el plan JSON de un `SELECT` sin utilizar `ANALYZE`.
+- `generate_sql`: genera SQL desde una pregunta en lenguaje natural sobre el catálogo cacheado, sin
+  ejecutarlo.
+- `generate_and_execute_query`: genera SQL y lo ejecuta solo si la revalidación completa lo permite.
+- `generate_report`: genera SQL, lo ejecuta y entrega el resultado como XLSX/PDF/CSV/JSON en línea.
 
 La configuración pasa por Pydantic, el servicio resuelve secretos desde el entorno y una fábrica por
 registro crea el adaptador. `CatalogService` coordina snapshots atómicos guardados en SQLite;
@@ -68,7 +75,7 @@ Respuesta esperada:
 {
   "status": "ok",
   "service": "data-platform-mcp",
-  "version": "0.5.0"
+  "version": "0.6.0"
 }
 ```
 
@@ -155,7 +162,7 @@ Variables Compose incluidas en `.env.example`:
 | `MCP_BIND_ADDRESS` | `127.0.0.1` | Interfaz local del MCP/API. |
 | `MCP_PORT` | `8000` | Puerto local del MCP/API. |
 | `LOG_LEVEL` | `info` | Nivel de log de Uvicorn. |
-| `IMAGE_TAG` | `0.5.0` | Etiqueta local de la imagen. |
+| `IMAGE_TAG` | `0.6.0` | Etiqueta local de la imagen. |
 | `CATALOG_DB_PATH` | `/app/data/catalog.db` | SQLite persistente de metadata técnica. |
 | `AUDIT_DB_PATH` | `/app/data/audit.db` | SQLite persistente de eventos SQL sin contenido sensible. |
 | `POSTGRES_IMAGE_TAG` | `17.10` | Etiqueta local del laboratorio PostgreSQL. |
@@ -231,7 +238,8 @@ servicio directamente a Internet. Consulta [seguridad](docs/security.md).
 
 ## Roadmap
 
-El plan se mantiene en [TASKS.md](TASKS.md). El siguiente hito, que no se iniciará sin aprobación,
-es Sprint 5: generación de consultas mediante lenguaje natural usando metadata real. Después siguen
-la exportación de resultados como reportes XLSX, PDF, CSV o JSON, objetos, RAG, Open WebUI,
-motores adicionales y hardening.
+El plan se mantiene en [TASKS.md](TASKS.md). Sprint 5 (generación de SQL mediante lenguaje natural
+sobre metadata real, aclaraciones ante ambigüedad y reportes XLSX/PDF/CSV/JSON) ya está implementado
+y deshabilitado por defecto. El siguiente hito, que no se iniciará sin aprobación, es Sprint 6:
+lectura de procedimientos y triggers con explicaciones asistidas por LLM. Después siguen RAG, Open
+WebUI, motores adicionales y hardening.
