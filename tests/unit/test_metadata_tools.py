@@ -36,6 +36,14 @@ async def test_metadata_tools_return_cached_structured_contracts_over_mcp(
             "list_relationships",
             {"connection_id": "postgres-demo", "table": "ventas"},
         )
+        procedures = await client.call_tool(
+            "list_procedures",
+            {"connection_id": "postgres-demo"},
+        )
+        triggers = await client.call_tool(
+            "list_triggers",
+            {"connection_id": "postgres-demo", "table": "ventas"},
+        )
 
     assert schemas.data.contract_version == "1.0.0"
     assert schemas.data.connection_id == "postgres-demo"
@@ -48,6 +56,10 @@ async def test_metadata_tools_return_cached_structured_contracts_over_mcp(
     assert description.data.table.unique_keys[0].name == "clientes_correo_key"
     assert relationships.data.relationships[0].cardinality == "many-to-one"
     assert relationships.data.relationships[0].source_columns == ["cliente_id"]
+    assert procedures.data.contract_version == "1.0.0"
+    assert procedures.data.procedures[0].name == "resumen_ventas_cliente"
+    assert triggers.data.contract_version == "1.0.0"
+    assert triggers.data.triggers[0].function_name == "actualizar_stock_producto"
 
 
 async def test_mcp_health_tool_is_versioned() -> None:
@@ -56,4 +68,4 @@ async def test_mcp_health_tool_is_versioned() -> None:
 
     assert result.data.contract_version == "1.0.0"
     assert result.data.status == "ok"
-    assert result.data.server_version == "0.6.0"
+    assert result.data.server_version == "0.7.0"

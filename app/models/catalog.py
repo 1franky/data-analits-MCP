@@ -5,7 +5,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.connections import SchemaInfo, TableDescription
+from app.models.connections import ProcedureInfo, SchemaInfo, TableDescription, TriggerInfo
 
 
 class CatalogRefreshState(StrEnum):
@@ -51,6 +51,8 @@ class CatalogSnapshot(BaseModel):
     schema_hash: str
     schemas: tuple[SchemaInfo, ...]
     tables: tuple[TableDescription, ...]
+    procedures: tuple[ProcedureInfo, ...] = ()
+    triggers: tuple[TriggerInfo, ...] = ()
 
 
 class CatalogRefreshRecord(BaseModel):

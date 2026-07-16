@@ -5,9 +5,11 @@ from abc import ABC, abstractmethod
 from app.models.connections import (
     ConnectionCapabilities,
     ConnectionTestResult,
+    ProcedureInfo,
     SchemaInfo,
     TableDescription,
     TableInfo,
+    TriggerInfo,
 )
 from app.models.query import AdapterQueryPlan, AdapterQueryResult, QueryParameter
 
@@ -39,6 +41,20 @@ class SqlDatabaseAdapter(ABC):
     @abstractmethod
     def describe_table(self, schema: str, table: str) -> TableDescription:
         """Return columns and key metadata for a visible table."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def list_procedures(self, schema: str | None = None) -> tuple[ProcedureInfo, ...]:
+        """List visible functions and procedures, optionally restricted to one schema."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def list_triggers(
+        self,
+        schema: str | None = None,
+        table: str | None = None,
+    ) -> tuple[TriggerInfo, ...]:
+        """List visible triggers, optionally restricted to schema and/or table."""
         raise NotImplementedError
 
     @abstractmethod

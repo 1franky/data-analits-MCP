@@ -64,6 +64,27 @@ def test_postgres_connection_and_metadata_contract() -> None:
     }
 
 
+def test_postgres_lists_demo_procedures_and_triggers() -> None:
+    adapter = build_adapter()
+
+    procedures = adapter.list_procedures("public")
+    triggers = adapter.list_triggers("public", "ventas")
+
+    procedure_names = {procedure.name for procedure in procedures}
+    assert {"actualizar_stock_producto", "resumen_ventas_cliente"} <= procedure_names
+    summary = next(p for p in procedures if p.name == "resumen_ventas_cliente")
+    assert "p_cliente_id" in summary.arguments
+    assert summary.kind == "function"
+    assert "resumen_ventas_cliente" in summary.definition
+
+    trigger = next(t for t in triggers if t.name == "trg_ventas_actualiza_stock")
+    assert trigger.table == "ventas"
+    assert trigger.timing == "AFTER"
+    assert trigger.events == ("INSERT",)
+    assert trigger.function_name == "actualizar_stock_producto"
+    assert "CREATE TRIGGER" in trigger.definition
+
+
 def test_postgres_lab_role_cannot_write() -> None:
     password = os.environ["POSTGRES_DEMO_PASSWORD"]
 

@@ -1,10 +1,10 @@
 # Herramientas MCP disponibles
 
-El catálogo contiene 18 tools y es idéntico por Streamable HTTP en `/mcp` y por STDIO mediante
+El catálogo contiene 21 tools y es idéntico por Streamable HTTP en `/mcp` y por STDIO mediante
 `data-platform-mcp-stdio`. Los modelos se serializan como datos estructurados. Los envelopes
-añadidos en Sprint 4 y Sprint 5 incluyen `contract_version: "1.0.0"`; consulta la
+añadidos en Sprint 4, Sprint 5 y Sprint 6 incluyen `contract_version: "1.0.0"`; consulta la
 [política de compatibilidad](mcp-contracts.md). No existe ninguna herramienta que ejecute
-escrituras.
+escrituras ni que invoque el cuerpo de un procedimiento o trigger.
 
 ## `hello_world`
 
@@ -28,7 +28,7 @@ Verifica el proceso MCP sin depender de PostgreSQL ni del catálogo.
   "contract_version": "1.0.0",
   "status": "ok",
   "service": "data-platform-mcp",
-  "server_version": "0.6.0"
+  "server_version": "0.7.0"
 }
 ```
 
@@ -313,3 +313,53 @@ que `generate_and_execute_query`, y entrega el resultado como un archivo descarg
   si no, devuelve `REPORTING_NOT_CONFIGURED` o `REPORT_FORMAT_NOT_SUPPORTED`.
 - Registra un evento de auditoría con hash de la pregunta y del SQL, nunca su texto ni el archivo
   generado.
+
+## `list_procedures`
+
+Lista funciones y procedimientos PostgreSQL cacheados, leyendo exclusivamente catálogos internos
+(`pg_proc`) sin ejecutar el cuerpo del objeto.
+
+- Parámetro requerido: `connection_id`.
+- Parámetro opcional: `schema`, coincidencia exacta.
+- Respuesta: `contract_version`, `connection_id`, `schema_filter`, `procedures` y `cache_status`.
+- Cada procedimiento incluye `schema`, `name`, `kind` (`function` o `procedure`), `language`,
+  `arguments` (firma cruda de PostgreSQL), `return_type`, `comment` y `definition` (DDL real vía
+  `pg_get_functiondef`).
+- Un motor con overloads declara varias entradas con el mismo `(schema, name)` y distinta firma;
+  no se resuelve ambigüedad aquí.
+- No se conecta a PostgreSQL durante la llamada; lee el último snapshot válido, igual que
+  `list_tables`.
+
+## `list_triggers`
+
+Lista triggers PostgreSQL cacheados, asociados a su tabla y función, leyendo exclusivamente
+catálogos internos (`pg_trigger`) sin ejecutar el trigger.
+
+- Parámetro requerido: `connection_id`.
+- Parámetros opcionales: `schema` y `table`.
+- Respuesta: `contract_version`, `connection_id`, filtros efectivos, `triggers` y `cache_status`.
+- Cada trigger incluye `schema`, `name`, `table`, `timing` (`BEFORE`/`AFTER`/`INSTEAD OF`),
+  `events` (`INSERT`/`UPDATE`/`DELETE`/`TRUNCATE`), `function_schema`, `function_name`, `comment`
+  y `definition` (DDL real vía `pg_get_triggerdef`).
+- No se conecta a PostgreSQL durante la llamada; lee el último snapshot válido.
+
+## `explain_database_object`
+
+Explica en lenguaje natural un procedimiento o trigger ya cacheado, a partir de su definición SQL
+real, separando explícitamente hechos verificables de inferencias del modelo.
+
+- Parámetros: `connection_id`, `schema`, `object_type` (`procedure` o `trigger`), `name`, y `table`
+  (obligatorio solo cuando `object_type` es `trigger`).
+- Respuesta: `contract_version`, `connection_id`, `schema`, `table`, `object_type`, `name`,
+  `outcome` (`explained` o `explanation_failed`), `purpose`, `facts`, `inferences`,
+  `referenced_tables`, `risks`, `definition_truncated`, `error_code` y `message`.
+- `facts` solo contiene elementos verificables presentes literalmente en la definición;
+  `inferences` contiene interpretaciones de negocio del modelo. Nunca se mezclan.
+- Si el objeto no existe en el catálogo cacheado, devuelve un error de dominio sin llamar al
+  proveedor LLM.
+- Si la definición excede `generation.max_definition_chars`, se trunca y `definition_truncated`
+  queda en `true`.
+- Requiere `generation.enabled: true` y un proveedor configurado (misma sección que `generate_sql`
+  de Sprint 5); si no, devuelve `GENERATION_NOT_CONFIGURED`.
+- Registra un evento de auditoría con hash de la definición, nunca su texto ni la explicación
+  generada.

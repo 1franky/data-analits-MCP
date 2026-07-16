@@ -25,6 +25,7 @@ from app.services import (
     ConnectionService,
     GenerationExecutionService,
     GenerationService,
+    ObjectExplanationService,
     QueryExecutionService,
     QueryValidationService,
 )
@@ -143,6 +144,18 @@ def get_generation_execution_service() -> GenerationExecutionService:
     return GenerationExecutionService(
         generation=get_generation_service(),
         execution=get_query_execution_service(),
+    )
+
+
+@lru_cache(maxsize=1)
+def get_object_explanation_service() -> ObjectExplanationService:
+    """Build the natural-language database object explanation service."""
+    return ObjectExplanationService(
+        catalog=get_catalog_service(),
+        provider_factory=get_llm_provider_factory(),
+        config=get_connections_config().generation,
+        environment=os.environ,
+        audit=get_audit_service(),
     )
 
 

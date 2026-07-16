@@ -68,6 +68,22 @@ Todos los cambios relevantes de este proyecto se documentan en este archivo. El 
   aparecen en texto plano en auditoría.
 - Documentación de generación asistida por LLM y reportes en arquitectura y catálogo de
   herramientas MCP.
+- Lectura cacheada de procedimientos/funciones y triggers PostgreSQL (`pg_proc`/`pg_trigger`,
+  DDL real vía `pg_get_functiondef`/`pg_get_triggerdef`), integrada al mismo snapshot y refresh
+  del catálogo de Sprint 2.
+- Herramientas MCP `list_procedures` y `list_triggers`, con la misma garantía de solo lectura del
+  snapshot cacheado que el resto de tools de exploración.
+- Explicación en lenguaje natural de procedimientos y triggers vía LLM (`explain_database_object`),
+  reutilizando el proveedor opcional de Sprint 5, separando explícitamente hechos verificables de
+  la definición real frente a inferencias del modelo.
+- Herramienta MCP `explain_database_object`, para un catálogo total de 21 tools.
+- Pruebas de adaptador, catálogo, contrato MCP, prompting/parsing de explicación y del servicio de
+  explicación, incluida verificación explícita de que un objeto inexistente nunca invoca al LLM y
+  de que la definición y la explicación nunca aparecen en texto plano en auditoría.
+- Laboratorio PostgreSQL con función y trigger de ejemplo (`resumen_ventas_cliente`,
+  `trg_ventas_actualiza_stock`) y sus permisos `EXECUTE` explícitos para `mcp_readonly`.
+- Documentación de procedimientos, triggers y explicación de objetos en arquitectura, catálogo y
+  catálogo de herramientas MCP.
 
 ### Security
 
@@ -90,6 +106,14 @@ Todos los cambios relevantes de este proyecto se documentan en este archivo. El 
   el archivo generado.
 - Reportes entregados exclusivamente en memoria (bytes base64 en la respuesta MCP), sin
   almacenamiento temporal en disco ni volumen adicional.
+- `list_procedures`/`list_triggers` consultan exclusivamente catálogos internos de PostgreSQL de
+  solo lectura (`pg_proc`, `pg_trigger`, funciones `pg_get_*def`); ninguna consulta invoca `CALL`
+  ni ejecuta el cuerpo del objeto listado o explicado.
+- Filtro por privilegio (`has_function_privilege`/`has_table_privilege`) sobre procedimientos y
+  triggers, coherente con el resto de metadata cacheada.
+- `explain_database_object` reutiliza `generation.provider`/`generation.enabled` de Sprint 5 (sin
+  segunda superficie de configuración de secretos) y audita solo hash SHA-256 de la definición y
+  de la explicación generada, nunca su texto.
 
 ### Fixed
 
@@ -101,6 +125,6 @@ Todos los cambios relevantes de este proyecto se documentan en este archivo. El 
 ### Not implemented
 
 - RAG documental.
-- Procedimientos, vistas, triggers y explicaciones de objetos de base de datos.
+- Vistas y vistas materializadas como objetos explorables o explicables.
 - Ejecución de escritura de cualquier tipo.
 - Autenticación, consulta/retención administrativa de auditoría y métricas operativas.

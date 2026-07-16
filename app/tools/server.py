@@ -14,9 +14,17 @@ from app.tools.connections import (
     list_connections,
     test_connection,
 )
+from app.tools.explanation import explain_database_object
 from app.tools.generation import generate_and_execute_query, generate_sql
 from app.tools.hello import hello_world
-from app.tools.metadata import describe_table, list_relationships, list_schemas, list_tables
+from app.tools.metadata import (
+    describe_table,
+    list_procedures,
+    list_relationships,
+    list_schemas,
+    list_tables,
+    list_triggers,
+)
 from app.tools.query import execute_read_query, explain_query, validate_sql
 from app.tools.reporting import generate_report
 
@@ -30,6 +38,7 @@ mcp = FastMCP(
         "relaciones y consultas SELECT seguras. Sprint 5 añade generación de SQL asistida "
         "por LLM sobre el catálogo real, siempre revalidada antes de ejecutar. "
         "Añade también generación de reportes XLSX/PDF/CSV/JSON entregados en línea. "
+        "Sprint 6 añade procedimientos y triggers cacheados de solo lectura. "
         "DML y DDL nunca se ejecutan."
     ),
 )
@@ -51,6 +60,9 @@ mcp.tool(name="explain_query")(explain_query)
 mcp.tool(name="generate_sql")(generate_sql)
 mcp.tool(name="generate_and_execute_query")(generate_and_execute_query)
 mcp.tool(name="generate_report")(generate_report)
+mcp.tool(name="list_procedures")(list_procedures)
+mcp.tool(name="list_triggers")(list_triggers)
+mcp.tool(name="explain_database_object")(explain_database_object)
 
 
 def main() -> None:

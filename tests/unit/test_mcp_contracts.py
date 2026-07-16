@@ -8,6 +8,7 @@ from app.tools.server import mcp
 EXPECTED_TOOLS = {
     "describe_table",
     "execute_read_query",
+    "explain_database_object",
     "explain_query",
     "generate_and_execute_query",
     "generate_report",
@@ -17,9 +18,11 @@ EXPECTED_TOOLS = {
     "health_check",
     "hello_world",
     "list_connections",
+    "list_procedures",
     "list_relationships",
     "list_schemas",
     "list_tables",
+    "list_triggers",
     "refresh_schema_cache",
     "search_catalog",
     "test_connection",
@@ -28,11 +31,13 @@ EXPECTED_TOOLS = {
 
 VERSIONED_TOOLS = {
     "describe_table": {"connection_id", "table", "cache_status"},
+    "explain_database_object": {"connection_id", "schema", "object_type", "name", "outcome"},
     "generate_and_execute_query": {"connection_id", "question", "outcome"},
     "generate_report": {"connection_id", "question", "format", "outcome", "generated_at"},
     "generate_sql": {"connection_id", "question", "outcome"},
     "get_connection_capabilities": {"connection_id", "connection"},
     "health_check": {"status", "service", "server_version"},
+    "list_procedures": {"connection_id", "schema_filter", "procedures", "cache_status"},
     "list_relationships": {
         "connection_id",
         "schema_filter",
@@ -42,6 +47,13 @@ VERSIONED_TOOLS = {
     },
     "list_schemas": {"connection_id", "schemas", "cache_status"},
     "list_tables": {"connection_id", "schema_filter", "tables", "cache_status"},
+    "list_triggers": {
+        "connection_id",
+        "schema_filter",
+        "table_filter",
+        "triggers",
+        "cache_status",
+    },
 }
 
 

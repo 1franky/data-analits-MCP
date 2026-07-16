@@ -9,8 +9,12 @@ SQL asistida por LLM sobre el catálogo cacheado (`generate_sql`, `generate_and_
 solicitud estructurada de aclaraciones ante ambigüedad, y generación de reportes XLSX/PDF/CSV/JSON
 desde lenguaje natural (`generate_report`), entregados en línea como bytes base64 sin usar disco.
 Todo el bloque de generación es opcional y está deshabilitado por defecto, sin introducir ningún
-camino de ejecución que evite la validación existente. No implementa RAG, procedimientos, triggers
-ni escritura.
+camino de ejecución que evite la validación existente. Sprint 6 añade lectura cacheada de
+procedimientos/funciones y triggers PostgreSQL (`list_procedures`, `list_triggers`) mediante
+catálogos internos de solo lectura, y explicación en lenguaje natural de esos objetos vía LLM
+(`explain_database_object`), reutilizando el mismo proveedor opcional de Sprint 5 y separando
+siempre hechos verificables de la definición real frente a inferencias del modelo. No implementa
+RAG ni escritura.
 
 ## Principios
 
@@ -29,7 +33,7 @@ ni escritura.
 
 ```mermaid
 flowchart LR
-    NetworkClient["Open WebUI u otro cliente MCP"] -->|"Streamable HTTP /mcp"| Tools["18 herramientas FastMCP"]
+    NetworkClient["Open WebUI u otro cliente MCP"] -->|"Streamable HTTP /mcp"| Tools["21 herramientas FastMCP"]
     LocalClient["Cliente MCP local"] -->|"STDIO"| Tools
     Operator["Operador"] -->|"GET /health"| API["FastAPI"]
     Tools --> CS["ConnectionService"]
@@ -39,6 +43,7 @@ flowchart LR
     Tools --> Gen["GenerationService"]
     Tools --> GenExec["GenerationExecutionService"]
     Tools --> Report["ReportingService"]
+    Tools --> ObjExp["ObjectExplanationService"]
     Executor --> Validator
     Executor --> CS
     GenExec --> Gen
@@ -49,6 +54,8 @@ flowchart LR
     Gen --> Cat
     Gen --> Validator
     Gen --> LlmFactory["LlmProviderFactory"]
+    ObjExp --> Cat
+    ObjExp --> LlmFactory
     LlmFactory --> LlmProvider["OpenAiCompatibleProvider"]
     CS --> Config["Pydantic + connections.yaml"]
     CS --> Factory["AdapterFactory"]
@@ -58,6 +65,7 @@ flowchart LR
     Executor --> Audit["AuditService"]
     Gen --> Audit
     Report --> Audit
+    ObjExp --> Audit
     Validator --> Policy["Política PostgreSQL / SQLGlot AST"]
     Audit --> AuditDB["Auditoría / SQLite"]
     Scheduler["CatalogScheduler"] --> Cat
@@ -153,7 +161,7 @@ el entry point `data-platform-mcp-stdio` llama `mcp.run()` con el transporte STD
 Así ambos transportes comparten nombres, schemas de entrada/salida y versión del servidor.
 
 Los envelopes añadidos en Sprint 4 incluyen `contract_version: "1.0.0"`. El servidor se publica
-como `0.6.0`; un cambio de implementación no obliga a romper el contrato. Las pruebas consultan
+como `0.7.0`; un cambio de implementación no obliga a romper el contrato. Las pruebas consultan
 `list_tools`, fijan los 15 nombres y validan los JSON Schemas de entrada/salida. La política de
 compatibilidad y el catálogo completo están en [mcp-contracts.md](mcp-contracts.md) y
 [mcp-tools.md](mcp-tools.md).

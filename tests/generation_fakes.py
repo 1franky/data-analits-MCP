@@ -21,10 +21,12 @@ from app.models.connections import (
     ConnectionTestResult,
     ConnectionType,
     ForeignKeyInfo,
+    ProcedureInfo,
     QueryLanguage,
     SchemaInfo,
     TableDescription,
     TableInfo,
+    TriggerInfo,
     UniqueKeyInfo,
 )
 from app.models.generation import (
@@ -50,9 +52,11 @@ from app.services import (
     ConnectionService,
     GenerationExecutionService,
     GenerationService,
+    ObjectExplanationService,
     QueryExecutionService,
     QueryValidationService,
 )
+from tests.catalog_fakes import CatalogStubAdapter, build_catalog_service
 from tests.factories import make_connection_config
 
 GENERATION_CAPABILITIES = ConnectionCapabilities(
@@ -135,6 +139,16 @@ class GenerationStubAdapter(SqlDatabaseAdapter):
             for description in self._tables
             if description.schema_name == schema and description.name == table
         )
+
+    def list_procedures(self, schema: str | None = None) -> tuple[ProcedureInfo, ...]:
+        return ()
+
+    def list_triggers(
+        self,
+        schema: str | None = None,
+        table: str | None = None,
+    ) -> tuple[TriggerInfo, ...]:
+        return ()
 
     def execute_read_query(
         self,
@@ -340,3 +354,44 @@ def build_reporting_services(
         clock=effective_clock,
     )
     return reporting, provider, audit_repository, adapter
+
+
+def build_explanation_services(
+    catalog_path: Path,
+    audit_path: Path,
+    *,
+    generation_config: GenerationConfig | None = None,
+    clock: Callable[[], datetime] | None = None,
+) -> tuple[
+    ObjectExplanationService,
+    FakeLlmProvider,
+    SqliteAuditRepository,
+    CatalogStubAdapter,
+    CatalogService,
+]:
+    """Compose a real ObjectExplanationService around a catalog seeded with demo objects."""
+    effective_clock = clock or (lambda: datetime(2026, 7, 16, 12, 0, tzinfo=UTC))
+    catalog, _repository, adapter = build_catalog_service(catalog_path, clock=effective_clock)
+    catalog.refresh_connection("postgres-demo")
+
+    audit_repository = SqliteAuditRepository(audit_path)
+    audit_repository.initialize()
+    audit = AuditService(audit_repository, AuditConfig())
+
+    provider = FakeLlmProvider()
+    provider_factory = LlmProviderFactory()
+    provider_factory.register(
+        LlmProviderType.OPENAI_COMPATIBLE,
+        lambda _config, _api_key: provider,
+    )
+
+    config = generation_config or GenerationConfig(enabled=True, provider=PROVIDER_CONFIG)
+    explanation = ObjectExplanationService(
+        catalog=catalog,
+        provider_factory=provider_factory,
+        config=config,
+        environment={"LLM_API_KEY": "unit-test-llm-key"},
+        audit=audit,
+        clock=effective_clock,
+    )
+    return explanation, provider, audit_repository, adapter, catalog

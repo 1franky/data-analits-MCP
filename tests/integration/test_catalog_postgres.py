@@ -57,3 +57,8 @@ def test_catalog_refresh_search_and_persistence_with_postgres(tmp_path: Path) ->
     assert snapshot is not None
     assert snapshot.schema_hash == refreshed.schema_hash
     assert "Juan Pérez" not in snapshot.model_dump_json()
+    assert {procedure.name for procedure in snapshot.procedures} >= {
+        "actualizar_stock_producto",
+        "resumen_ventas_cliente",
+    }
+    assert {trigger.name for trigger in snapshot.triggers} == {"trg_ventas_actualiza_stock"}

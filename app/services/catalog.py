@@ -29,15 +29,19 @@ from app.models.catalog import (
 from app.models.connections import (
     CatalogConfig,
     ConnectionSummary,
+    ProcedureInfo,
     SchemaInfo,
     TableDescription,
+    TriggerInfo,
 )
 from app.models.metadata import (
+    ProcedureListResponse,
     RelationshipListResponse,
     SchemaListResponse,
     TableDescriptionResponse,
     TableListResponse,
     TableSummary,
+    TriggerListResponse,
 )
 from app.repositories import CatalogRepository
 from app.services.connections import ConnectionService
@@ -291,6 +295,87 @@ class CatalogService:
             cache_status=status,
         )
 
+    def list_procedures(
+        self,
+        connection_id: str,
+        schema: str | None = None,
+    ) -> ProcedureListResponse:
+        """List cached procedures and functions, optionally restricted to one schema."""
+        schema_filter = self._normalize_filter(schema, "schema")
+        snapshot, status = self._snapshot_context(connection_id)
+        procedures = tuple(
+            procedure
+            for procedure in snapshot.procedures
+            if schema_filter is None or procedure.schema_name == schema_filter
+        )
+        return ProcedureListResponse(
+            connection_id=connection_id,
+            schema_filter=schema_filter,
+            procedures=procedures,
+            cache_status=status,
+        )
+
+    def list_triggers(
+        self,
+        connection_id: str,
+        schema: str | None = None,
+        table: str | None = None,
+    ) -> TriggerListResponse:
+        """List cached triggers, optionally restricted to schema and/or table."""
+        schema_filter = self._normalize_filter(schema, "schema")
+        table_filter = self._normalize_filter(table, "table")
+        snapshot, status = self._snapshot_context(connection_id)
+        triggers = tuple(
+            trigger
+            for trigger in snapshot.triggers
+            if (schema_filter is None or trigger.schema_name == schema_filter)
+            and (table_filter is None or trigger.table == table_filter)
+        )
+        return TriggerListResponse(
+            connection_id=connection_id,
+            schema_filter=schema_filter,
+            table_filter=table_filter,
+            triggers=triggers,
+            cache_status=status,
+        )
+
+    def get_procedure(self, connection_id: str, schema: str, name: str) -> ProcedureInfo:
+        """Resolve one cached procedure or function definition, without connecting to the DB."""
+        schema_name = self._normalize_filter(schema, "schema")
+        object_name = self._normalize_filter(name, "name")
+        snapshot, _status = self._snapshot_context(connection_id)
+        procedure = next(
+            (
+                candidate
+                for candidate in snapshot.procedures
+                if candidate.schema_name == schema_name and candidate.name == object_name
+            ),
+            None,
+        )
+        if procedure is None:
+            raise DatabaseObjectNotFoundError(schema, name)
+        return procedure
+
+    def get_trigger(self, connection_id: str, schema: str, table: str, name: str) -> TriggerInfo:
+        """Resolve one cached trigger definition, without connecting to the DB."""
+        schema_name = self._normalize_filter(schema, "schema")
+        table_name = self._normalize_filter(table, "table")
+        object_name = self._normalize_filter(name, "name")
+        snapshot, _status = self._snapshot_context(connection_id)
+        trigger = next(
+            (
+                candidate
+                for candidate in snapshot.triggers
+                if candidate.schema_name == schema_name
+                and candidate.table == table_name
+                and candidate.name == object_name
+            ),
+            None,
+        )
+        if trigger is None:
+            raise DatabaseObjectNotFoundError(schema, name)
+        return trigger
+
     def _build_snapshot(self, connection_id: str) -> CatalogSnapshot:
         adapter = self._connections.get_adapter(connection_id)
         excluded_schemas = {name.casefold() for name in self._config.excluded_schemas}
@@ -306,13 +391,42 @@ class CatalogService:
                     description = adapter.describe_table(table.schema_name, table.name)
                     tables.append(description.model_copy(update={"kind": table.kind}))
         ordered_tables = tuple(sorted(tables, key=lambda item: (item.schema_name, item.name)))
+
+        capabilities = adapter.capabilities
+        procedures: tuple[ProcedureInfo, ...] = ()
+        if capabilities.list_procedures:
+            procedures = tuple(
+                sorted(
+                    (
+                        procedure
+                        for procedure in adapter.list_procedures()
+                        if procedure.schema_name.casefold() not in excluded_schemas
+                    ),
+                    key=lambda item: (item.schema_name, item.name),
+                )
+            )
+        triggers: tuple[TriggerInfo, ...] = ()
+        if capabilities.list_triggers:
+            triggers = tuple(
+                sorted(
+                    (
+                        trigger
+                        for trigger in adapter.list_triggers()
+                        if trigger.schema_name.casefold() not in excluded_schemas
+                    ),
+                    key=lambda item: (item.schema_name, item.table, item.name),
+                )
+            )
+
         refreshed_at = self._clock()
         return CatalogSnapshot(
             connection_id=connection_id,
             refreshed_at=refreshed_at,
-            schema_hash=self._schema_hash(schemas, ordered_tables),
+            schema_hash=self._schema_hash(schemas, ordered_tables, procedures, triggers),
             schemas=schemas,
             tables=ordered_tables,
+            procedures=procedures,
+            triggers=triggers,
         )
 
     def _record_failure(
@@ -396,10 +510,16 @@ class CatalogService:
     def _schema_hash(
         schemas: tuple[SchemaInfo, ...],
         tables: tuple[TableDescription, ...],
+        procedures: tuple[ProcedureInfo, ...] = (),
+        triggers: tuple[TriggerInfo, ...] = (),
     ) -> str:
         payload = {
             "schemas": [schema.model_dump(mode="json") for schema in schemas],
             "tables": [table.model_dump(mode="json", by_alias=True) for table in tables],
+            "procedures": [
+                procedure.model_dump(mode="json", by_alias=True) for procedure in procedures
+            ],
+            "triggers": [trigger.model_dump(mode="json", by_alias=True) for trigger in triggers],
         }
         canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         return sha256(canonical.encode("utf-8")).hexdigest()

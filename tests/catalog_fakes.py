@@ -20,10 +20,12 @@ from app.models.connections import (
     ConnectionTestResult,
     ConnectionType,
     ForeignKeyInfo,
+    ProcedureInfo,
     QueryLanguage,
     SchemaInfo,
     TableDescription,
     TableInfo,
+    TriggerInfo,
     UniqueKeyInfo,
 )
 from app.models.query import AdapterQueryPlan, AdapterQueryResult, QueryParameter
@@ -38,6 +40,12 @@ CATALOG_CAPABILITIES = ConnectionCapabilities(
     describe_table=True,
     primary_keys=True,
     foreign_keys=True,
+    list_procedures=True,
+    list_triggers=True,
+)
+
+CATALOG_CAPABILITIES_WITHOUT_OBJECTS = CATALOG_CAPABILITIES.model_copy(
+    update={"list_procedures": False, "list_triggers": False}
 )
 
 
@@ -54,16 +62,21 @@ class MutableClock:
 class CatalogStubAdapter(SqlDatabaseAdapter):
     """Metadata adapter with optional failure and concurrency barriers."""
 
-    def __init__(self) -> None:
+    def __init__(self, supports_objects: bool = True) -> None:
         self.fail = False
         self.refresh_calls = 0
         self.started_event: Event | None = None
         self.release_event: Event | None = None
+        self.supports_objects = supports_objects
         self._tables = self._build_tables()
+        self._procedures = self._build_procedures()
+        self._triggers = self._build_triggers()
 
     @property
     def capabilities(self) -> ConnectionCapabilities:
-        return CATALOG_CAPABILITIES
+        if self.supports_objects:
+            return CATALOG_CAPABILITIES
+        return CATALOG_CAPABILITIES_WITHOUT_OBJECTS
 
     def test_connection(self) -> ConnectionTestResult:
         return ConnectionTestResult(
@@ -100,6 +113,26 @@ class CatalogStubAdapter(SqlDatabaseAdapter):
             for description in self._tables
             if description.schema_name == schema and description.name == table
         )
+
+    def list_procedures(self, schema: str | None = None) -> tuple[ProcedureInfo, ...]:
+        if not self.supports_objects:
+            raise AssertionError("adapter without list_procedures capability was called")
+        if schema not in {None, "public"}:
+            return ()
+        return self._procedures
+
+    def list_triggers(
+        self,
+        schema: str | None = None,
+        table: str | None = None,
+    ) -> tuple[TriggerInfo, ...]:
+        if not self.supports_objects:
+            raise AssertionError("adapter without list_triggers capability was called")
+        if schema not in {None, "public"}:
+            return ()
+        if table not in {None, "ventas"}:
+            return ()
+        return self._triggers
 
     def execute_read_query(
         self,
@@ -183,6 +216,37 @@ class CatalogStubAdapter(SqlDatabaseAdapter):
             ),
         )
         return (clientes, productos, ventas)
+
+    @staticmethod
+    def _build_procedures() -> tuple[ProcedureInfo, ...]:
+        return (
+            ProcedureInfo(
+                schema="public",
+                name="resumen_ventas_cliente",
+                kind="function",
+                language="sql",
+                arguments="p_cliente_id integer",
+                return_type="TABLE(total_ventas bigint, monto_total numeric)",
+                definition="CREATE FUNCTION resumen_ventas_cliente(p_cliente_id integer) ...",
+                comment="Calcula el número de ventas y el monto total gastado por un cliente.",
+            ),
+        )
+
+    @staticmethod
+    def _build_triggers() -> tuple[TriggerInfo, ...]:
+        return (
+            TriggerInfo(
+                schema="public",
+                name="trg_ventas_actualiza_stock",
+                table="ventas",
+                timing="AFTER",
+                events=("INSERT",),
+                function_schema="public",
+                function_name="actualizar_stock_producto",
+                definition="CREATE TRIGGER trg_ventas_actualiza_stock AFTER INSERT ON ventas ...",
+                comment=None,
+            ),
+        )
 
 
 def build_catalog_service(

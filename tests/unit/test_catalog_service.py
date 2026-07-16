@@ -220,3 +220,88 @@ def test_search_rejects_invalid_requests(tmp_path: Path, query: str, limit: int)
 
     with pytest.raises(CatalogRequestError):
         service.search(query, max_results=limit)
+
+
+def test_refresh_populates_procedures_and_triggers(tmp_path: Path) -> None:
+    service, repository, _adapter = build_catalog_service(tmp_path / "catalog.db")
+
+    service.refresh_connection("postgres-demo")
+    snapshot = repository.get_snapshot("postgres-demo")
+
+    assert snapshot is not None
+    assert {procedure.name for procedure in snapshot.procedures} == {"resumen_ventas_cliente"}
+    assert {trigger.name for trigger in snapshot.triggers} == {"trg_ventas_actualiza_stock"}
+
+    procedures = service.list_procedures("postgres-demo")
+    triggers = service.list_triggers("postgres-demo", table="ventas")
+
+    assert procedures.procedures[0].arguments == "p_cliente_id integer"
+    assert triggers.triggers[0].function_name == "actualizar_stock_producto"
+    assert triggers.triggers[0].timing == "AFTER"
+
+
+def test_excluded_schemas_filter_procedures_and_triggers(tmp_path: Path) -> None:
+    service, repository, _adapter = build_catalog_service(
+        tmp_path / "catalog.db",
+        config=CatalogConfig(excluded_schemas=("public",)),
+    )
+
+    service.refresh_connection("postgres-demo")
+    snapshot = repository.get_snapshot("postgres-demo")
+
+    assert snapshot is not None
+    assert snapshot.procedures == ()
+    assert snapshot.triggers == ()
+
+
+def test_schema_hash_changes_when_only_a_trigger_changes(tmp_path: Path) -> None:
+    adapter = CatalogStubAdapter()
+    service, repository, _adapter = build_catalog_service(tmp_path / "catalog.db", adapter=adapter)
+    service.refresh_connection("postgres-demo")
+    hash_before = repository.get_snapshot("postgres-demo").schema_hash  # type: ignore[union-attr]
+
+    adapter._triggers = ()
+    service.refresh_connection("postgres-demo")
+    hash_after = repository.get_snapshot("postgres-demo").schema_hash  # type: ignore[union-attr]
+
+    assert hash_before != hash_after
+
+
+def test_get_procedure_and_get_trigger_resolve_cached_definitions(tmp_path: Path) -> None:
+    service, _repository, _adapter = build_catalog_service(tmp_path / "catalog.db")
+    service.refresh_connection("postgres-demo")
+
+    procedure = service.get_procedure("postgres-demo", "public", "resumen_ventas_cliente")
+    trigger = service.get_trigger("postgres-demo", "public", "ventas", "trg_ventas_actualiza_stock")
+
+    assert "resumen_ventas_cliente" in procedure.definition
+    assert trigger.function_name == "actualizar_stock_producto"
+
+
+def test_get_procedure_missing_raises_not_found(tmp_path: Path) -> None:
+    service, _repository, _adapter = build_catalog_service(tmp_path / "catalog.db")
+    service.refresh_connection("postgres-demo")
+
+    with pytest.raises(DatabaseObjectNotFoundError, match=r"public\.missing"):
+        service.get_procedure("postgres-demo", "public", "missing")
+
+
+def test_get_trigger_missing_raises_not_found(tmp_path: Path) -> None:
+    service, _repository, _adapter = build_catalog_service(tmp_path / "catalog.db")
+    service.refresh_connection("postgres-demo")
+
+    with pytest.raises(DatabaseObjectNotFoundError, match=r"public\.missing"):
+        service.get_trigger("postgres-demo", "public", "ventas", "missing")
+
+
+def test_adapter_without_object_capabilities_is_never_called_for_objects(tmp_path: Path) -> None:
+    adapter = CatalogStubAdapter(supports_objects=False)
+    service, repository, _adapter = build_catalog_service(tmp_path / "catalog.db", adapter=adapter)
+
+    result = service.refresh_connection("postgres-demo")
+    snapshot = repository.get_snapshot("postgres-demo")
+
+    assert result.outcome is CatalogRefreshOutcome.SUCCESS
+    assert snapshot is not None
+    assert snapshot.procedures == ()
+    assert snapshot.triggers == ()

@@ -7,8 +7,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.models.catalog import CatalogCacheStatus, CatalogRelationship
 from app.models.connections import (
     ConnectionSummary,
+    ProcedureInfo,
     SchemaInfo,
     TableDescription,
+    TriggerInfo,
 )
 from app.models.contracts import VersionedToolResponse
 
@@ -85,4 +87,23 @@ class RelationshipListResponse(VersionedToolResponse):
     schema_filter: str | None
     table_filter: str | None
     relationships: tuple[CatalogRelationship, ...]
+    cache_status: CatalogCacheStatus
+
+
+class ProcedureListResponse(VersionedToolResponse):
+    """Cached functions and procedures, optionally filtered by schema."""
+
+    connection_id: str
+    schema_filter: str | None
+    procedures: tuple[ProcedureInfo, ...]
+    cache_status: CatalogCacheStatus
+
+
+class TriggerListResponse(VersionedToolResponse):
+    """Cached triggers, optionally filtered by schema and/or table."""
+
+    connection_id: str
+    schema_filter: str | None
+    table_filter: str | None
+    triggers: tuple[TriggerInfo, ...]
     cache_status: CatalogCacheStatus

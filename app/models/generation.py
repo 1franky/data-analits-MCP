@@ -1,7 +1,7 @@
 """Typed contracts for LLM-assisted SQL generation."""
 
 from enum import StrEnum
-from typing import Annotated, Self
+from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -38,6 +38,7 @@ class GenerationConfig(BaseModel):
     enabled: bool = False
     provider: GenerationProviderConfig | None = None
     max_context_tables: Annotated[int, Field(ge=1, le=200)] = 20
+    max_definition_chars: Annotated[int, Field(ge=500, le=100_000)] = 8_000
 
     @model_validator(mode="after")
     def require_provider_when_enabled(self) -> Self:
@@ -149,5 +150,33 @@ class GenerateAndExecuteResult(VersionedToolResponse):
     generated: GeneratedQuery | None = None
     clarification: ClarificationRequired | None = None
     execution: QueryExecutionResult | None = None
+    error_code: str | None = None
+    message: str
+
+
+class ExplanationOutcome(StrEnum):
+    """Terminal outcome of one object-explanation attempt."""
+
+    EXPLAINED = "explained"
+    EXPLANATION_FAILED = "explanation_failed"
+
+
+class ExplainObjectResult(VersionedToolResponse):
+    """Structured outcome of the explain_database_object use case."""
+
+    model_config = ConfigDict(frozen=True, populate_by_name=True, serialize_by_alias=True)
+
+    connection_id: str
+    schema_name: str = Field(alias="schema")
+    table: str | None = None
+    object_type: Literal["procedure", "trigger"]
+    name: str
+    outcome: ExplanationOutcome
+    purpose: str | None = None
+    facts: tuple[str, ...] = ()
+    inferences: tuple[str, ...] = ()
+    referenced_tables: tuple[str, ...] = ()
+    risks: tuple[str, ...] = ()
+    definition_truncated: bool = False
     error_code: str | None = None
     message: str

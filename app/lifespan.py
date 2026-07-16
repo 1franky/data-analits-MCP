@@ -11,6 +11,7 @@ from app.container import (
     get_connection_service,
     get_connections_config,
     get_generation_service,
+    get_object_explanation_service,
 )
 
 
@@ -21,6 +22,7 @@ async def application_lifespan(_app: FastAPI) -> AsyncIterator[None]:
     get_audit_repository()
     if get_connections_config().generation.enabled:
         get_generation_service()
+        get_object_explanation_service()
     scheduler = get_catalog_scheduler()
     await scheduler.start()
     try:

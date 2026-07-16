@@ -6,10 +6,12 @@ from pydantic import Field
 
 from app.container import get_catalog_service
 from app.models.metadata import (
+    ProcedureListResponse,
     RelationshipListResponse,
     SchemaListResponse,
     TableDescriptionResponse,
     TableListResponse,
+    TriggerListResponse,
 )
 
 MetadataName = Annotated[str, Field(min_length=1, max_length=128)]
@@ -44,3 +46,20 @@ def list_relationships(
 ) -> RelationshipListResponse:
     """List foreign keys whose source or target matches the optional filters."""
     return get_catalog_service().list_relationships(connection_id, schema, table)
+
+
+def list_procedures(
+    connection_id: str,
+    schema: MetadataName | None = None,
+) -> ProcedureListResponse:
+    """List cached procedures and functions, optionally restricted to one schema."""
+    return get_catalog_service().list_procedures(connection_id, schema)
+
+
+def list_triggers(
+    connection_id: str,
+    schema: MetadataName | None = None,
+    table: MetadataName | None = None,
+) -> TriggerListResponse:
+    """List cached triggers, optionally restricted to schema and/or table."""
+    return get_catalog_service().list_triggers(connection_id, schema, table)
