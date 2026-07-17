@@ -6,6 +6,7 @@ from app.models.contracts import MCP_CONTRACT_VERSION
 from app.tools.server import mcp
 
 EXPECTED_TOOLS = {
+    "delete_indexed_document",
     "describe_table",
     "execute_read_query",
     "explain_database_object",
@@ -18,13 +19,16 @@ EXPECTED_TOOLS = {
     "health_check",
     "hello_world",
     "list_connections",
+    "list_indexed_documents",
     "list_procedures",
     "list_relationships",
     "list_schemas",
     "list_tables",
     "list_triggers",
+    "refresh_document_index",
     "refresh_schema_cache",
     "search_catalog",
+    "search_documents",
     "test_connection",
     "validate_sql",
 }
@@ -54,6 +58,16 @@ VERSIONED_TOOLS = {
         "triggers",
         "cache_status",
     },
+    "search_documents": {
+        "query",
+        "connection_id",
+        "domain",
+        "matches",
+        "mixed_connections_warning",
+    },
+    "list_indexed_documents": {"documents", "total"},
+    "refresh_document_index": {"started_at", "completed_at", "entries", "indexed_count"},
+    "delete_indexed_document": {"document_id", "deleted"},
 }
 
 

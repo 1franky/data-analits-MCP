@@ -1,4 +1,4 @@
-"""Exercise the public Sprint 4/5 MCP contract through Streamable HTTP."""
+"""Exercise the public Sprint 4-7 MCP contract through Streamable HTTP."""
 
 import argparse
 import asyncio
@@ -10,6 +10,7 @@ from typing import Any
 from fastmcp import Client
 
 EXPECTED_TOOLS = {
+    "delete_indexed_document",
     "describe_table",
     "execute_read_query",
     "explain_database_object",
@@ -22,12 +23,15 @@ EXPECTED_TOOLS = {
     "health_check",
     "hello_world",
     "list_connections",
+    "list_indexed_documents",
     "list_procedures",
     "list_relationships",
     "list_schemas",
     "list_tables",
     "list_triggers",
+    "refresh_document_index",
     "refresh_schema_cache",
+    "search_documents",
     "search_catalog",
     "test_connection",
     "validate_sql",

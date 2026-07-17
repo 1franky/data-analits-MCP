@@ -2,8 +2,8 @@
 
 Estados permitidos: `TODO`, `IN_PROGRESS`, `BLOCKED`, `DONE`.
 
-Sprint 6 fue aprobado explícitamente, sus tres historias (HU-601 a HU-603) quedan implementadas en
-la rama actual y su validación reproducible se registró más abajo. No se inicia Sprint 7 ni
+Sprint 7 fue aprobado explícitamente, sus tres historias (HU-701 a HU-703) quedan implementadas en
+la rama actual y su validación reproducible se registró más abajo. No se inicia Sprint 8 ni
 historias posteriores hasta recibir aprobación explícita.
 
 ## Sprint 0 — Descubrimiento, arquitectura y bootstrap
@@ -69,9 +69,9 @@ historias posteriores hasta recibir aprobación explícita.
 
 | Historia | Estado | Dependencias | Archivos previstos | Pruebas requeridas | Criterios de aceptación | Bloqueos |
 |---|---|---|---|---|---|---|
-| HU-701 Indexar documentación | TODO | Abstracción embeddings/vector store | `app/rag/`, ingesta, Qdrant | Formatos, idempotencia, reindex/delete | Chunks y metadatos configurables | Seleccionar embeddings y versión Qdrant ARM64 |
-| HU-702 Buscar documentación | TODO | HU-701 | Servicio/tool de búsqueda | Score, origen y filtros | Resultados citados por conexión/dominio | Espera índice real |
-| HU-703 Combinar RAG y catálogo | TODO | HU-702, Sprint 2 | Constructor de contexto | Conflictos y prioridad catálogo | Distingue contexto técnico/funcional | Espera ambos subsistemas |
+| HU-701 Indexar documentación | DONE | Abstracción embeddings/vector store | `app/rag/`, ingesta, Qdrant | Formatos, idempotencia, reindex/delete | Chunks y metadatos configurables | Ninguno |
+| HU-702 Buscar documentación | DONE | HU-701 | Servicio/tool de búsqueda | Score, origen y filtros | Resultados citados por conexión/dominio | Ninguno |
+| HU-703 Combinar RAG y catálogo | DONE | HU-702, Sprint 2 | `docs/rag.md` | Documentación del patrón de uso combinado | Distingue contexto técnico/funcional; catálogo tiene prioridad | Ninguno |
 
 ## Sprint 8 — Integración con Open WebUI
 
@@ -276,4 +276,46 @@ runtime platform: PASS — MCP y laboratorio linux/arm64 sobre red externa ai-pl
 Nota: generation.enabled queda en false por defecto (sin proveedor LLM real en el laboratorio
 local); explain_database_object se valida por contrato MCP y por su suite unitaria con
 FakeLlmProvider, igual que generate_sql/generate_report en Sprint 5.
+```
+
+## Evidencia de validación de Sprint 7
+
+Validación ejecutada el 2026-07-16 sobre Docker Desktop ARM64:
+
+```text
+Python del target test: PASS — Python 3.12.13, linux/arm64
+pytest unitario/contratos/STDIO: PASS — 256 passed, 17 integration deselected in 10.29s
+pytest integración PostgreSQL + Qdrant: PASS — 17 passed, 256 deselected (12 PostgreSQL + 5 Qdrant,
+  ejecutado en la red ai-platform)
+ruff check: PASS — All checks passed
+ruff format --check: PASS — 157 files already formatted
+mypy app tests: PASS — no issues found in 157 source files
+docker compose config --quiet: PASS
+docker build --target test: PASS — image sha256:faf6c28e3a70...
+docker compose up: PASS — los tres servicios (data-platform-mcp, postgres-lab, qdrant) healthy,
+  versión 0.8.0 (imagen sha256:ed4ede1168a7...); qdrant fijado a v1.17.1, healthcheck TCP (la
+  imagen oficial no trae curl/wget)
+MCP HTTP smoke: PASS — 25 tools (scripts/smoke_mcp.py ampliado), contrato 1.0.0
+tools RAG registradas: PASS — search_documents, list_indexed_documents, refresh_document_index,
+  delete_indexed_document confirmadas vía list_tools real
+comportamiento sin rag.enabled: PASS — refresh_document_index devuelve RAG_NOT_CONFIGURED con
+  mensaje claro, sin crash, verificado con un cliente MCP real
+reemplazo de vectores: PASS — upsert_chunks reemplaza el conjunto completo de vectores de un
+  documento (borrado por document_id antes de insertar); test de integración real contra Qdrant
+  confirma que un reindexado con menos chunks no deja fragmentos huérfanos buscables
+idempotencia: PASS — reindexar un documento sin cambios de contenido no recalcula embeddings
+  (contador de llamadas al proveedor no crece)
+filtros de búsqueda: PASS — documentos sin connection_id/domain (globales) se incluyen siempre;
+  mezclar conexiones sin filtro explícito se señala con mixed_connections_warning
+auditoría RAG: PASS — ni el contenido de documentos ni el texto de búsquedas aparecen en texto
+  plano en la base de auditoría; solo hash SHA-256 (content_hash, prompt_hash)
+runtime restrictions: PASS — UID 10001, raíz read-only, cap_drop ALL, no-new-privileges
+runtime platform: PASS — MCP, laboratorio y Qdrant linux/arm64 sobre red externa ai-platform
+
+Nota: rag.enabled queda en false por defecto (sin proveedor de embeddings real en el laboratorio
+local); search_documents, list_indexed_documents, refresh_document_index y delete_indexed_document
+se validan por contrato MCP y por su suite unitaria con FakeEmbeddingProvider/
+FakeVectorStoreRepository, igual que generate_sql/explain_database_object en Sprints 5-6. La
+persistencia de vectores (Qdrant real) sí se valida con integración real, a diferencia del
+proveedor de embeddings.
 ```

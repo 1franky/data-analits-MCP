@@ -84,6 +84,26 @@ Todos los cambios relevantes de este proyecto se documentan en este archivo. El 
   `trg_ventas_actualiza_stock`) y sus permisos `EXECUTE` explícitos para `mcp_readonly`.
 - Documentación de procedimientos, triggers y explicación de objetos en arquitectura, catálogo y
   catálogo de herramientas MCP.
+- Subsistema RAG documental desacoplado (`app/rag/`): abstracción de proveedor de embeddings
+  (fábrica por registro, `OpenAiCompatibleEmbeddingProvider`), independiente del proveedor de
+  generación de SQL de Sprint 5.
+- Ingesta de documentación desde un directorio montado de solo lectura (`.md`, `.txt`, `.sql`,
+  `.json`, `.yaml`), con derivación de `connection_id`/`domain`/`document_type`/`version` desde
+  segmentos de directorio `clave=valor`, chunking configurable con overlap, e indexación idempotente
+  por hash de contenido (un documento sin cambios no recalcula embeddings).
+- Vector store Qdrant (`app/repositories/qdrant_vector_store.py`) con colecciones versionadas por
+  fingerprint de modelo/dimensión de embeddings, evitando mezclar vectores incompatibles.
+- Herramientas MCP `search_documents`, `list_indexed_documents`, `refresh_document_index` y
+  `delete_indexed_document`, para un catálogo total de 25 tools.
+- Reindexación periódica no bloqueante del directorio de documentos (`DocumentIndexScheduler`,
+  mismo patrón que `CatalogScheduler`).
+- Pruebas de embeddings, ingesta, repositorios, servicios, scheduler, contrato MCP e integración
+  real contra Qdrant, incluida verificación explícita de reemplazo completo de vectores al
+  reindexar (sin fragmentos huérfanos) y de que ni el contenido de documentos ni el texto de
+  búsquedas aparecen en texto plano en auditoría.
+- Documentación de RAG documental (`docs/rag.md`), incluido el patrón de uso combinado con el
+  catálogo técnico (HU-703).
+- Documentos de ejemplo en `documents/` que ejercitan la convención de organización por carpetas.
 
 ### Security
 
@@ -114,6 +134,16 @@ Todos los cambios relevantes de este proyecto se documentan en este archivo. El 
 - `explain_database_object` reutiliza `generation.provider`/`generation.enabled` de Sprint 5 (sin
   segunda superficie de configuración de secretos) y audita solo hash SHA-256 de la definición y
   de la explicación generada, nunca su texto.
+- RAG deshabilitado por defecto; requiere configurar explícitamente `rag.embedding_provider` y
+  resolver su secreto vía variable de entorno, independiente del secreto de `generation.provider`.
+- Directorio de documentos montado de solo lectura (`./documents:/app/documents:ro`); ningún tool
+  MCP escribe en ese volumen.
+- `upsert_chunks` reemplaza siempre el conjunto completo de vectores de un documento (borrado por
+  `document_id` antes de insertar), evitando fragmentos huérfanos de una versión anterior más larga.
+- Auditoría de indexación y búsqueda con hash SHA-256 del contenido/pregunta, nunca su texto ni los
+  fragmentos recuperados.
+- Si `rag.enabled=true` y Qdrant no responde al arrancar, el proceso falla el arranque completo
+  (mismo criterio fail-fast que la validación de conexiones PostgreSQL).
 
 ### Fixed
 
@@ -124,7 +154,8 @@ Todos los cambios relevantes de este proyecto se documentan en este archivo. El 
 
 ### Not implemented
 
-- RAG documental.
 - Vistas y vistas materializadas como objetos explorables o explicables.
 - Ejecución de escritura de cualquier tipo.
 - Autenticación, consulta/retención administrativa de auditoría y métricas operativas.
+- Integración real con Open WebUI (Sprint 8), embeddings locales, formatos de documento adicionales
+  (PDF y otros) más allá de `.md`/`.txt`/`.sql`/`.json`/`.yaml`.
