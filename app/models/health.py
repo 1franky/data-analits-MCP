@@ -11,3 +11,20 @@ class HealthResponse(BaseModel):
     status: Literal["ok"]
     service: str
     version: str
+
+
+class ReadinessCheck(BaseModel):
+    """One named readiness signal and its current state."""
+
+    name: str
+    ready: bool
+    detail: str | None = None
+
+
+class ReadinessResponse(BaseModel):
+    """Response contract for the readiness endpoint, distinct from liveness."""
+
+    status: Literal["ready", "not_ready"]
+    service: str
+    version: str
+    checks: tuple[ReadinessCheck, ...]

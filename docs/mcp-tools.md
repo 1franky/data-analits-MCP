@@ -12,6 +12,10 @@ Sprint 9 añade MariaDB, que reutiliza exactamente las mismas tools SQL ya docum
 `mariadb`) se resuelve internamente a partir de `connection_id`, nunca lo elige el cliente. MongoDB
 es un motor documental y usa 4 tools propias, documentadas al final de este archivo.
 
+Sprint 10 añade `GET /health`, `GET /ready` y `GET /metrics` como endpoints REST del proceso, fuera
+de este catálogo MCP — no son tools invocables por un cliente MCP, son para orquestadores/operadores
+(ver [architecture.md](architecture.md#observabilidad)).
+
 ## `hello_world`
 
 Verifica que la sesión MCP puede listar e invocar herramientas.

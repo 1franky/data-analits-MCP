@@ -1,6 +1,7 @@
 """Validated, audited and bounded read-query execution use cases."""
 
 from threading import BoundedSemaphore
+from time import perf_counter
 
 from app.exceptions import DataPlatformError
 from app.models.audit import AuditOperation
@@ -11,6 +12,13 @@ from app.models.query import (
     QueryPolicyConfig,
     SqlValidationResult,
     ValidationIssue,
+)
+from app.observability.metrics import (
+    QUERY_BLOCKED_TOTAL,
+    QUERY_DURATION_SECONDS,
+    QUERY_IN_PROGRESS,
+    QUERY_QUEUE_WAIT_SECONDS,
+    QUERY_REQUESTS_TOTAL,
 )
 from app.services.audit import AuditService
 from app.services.connections import ConnectionService
@@ -53,6 +61,7 @@ class QueryExecutionService:
         )
         if not validation.executable or validation.normalized_sql is None:
             result = self._blocked_execution(connection_id, validation)
+            self._record_blocked_metrics(config.type.value, "execute", validation)
             self._audit_execution(connection_id, sql, result, tool_name)
             return result
 
@@ -71,7 +80,10 @@ class QueryExecutionService:
             effective_rows,
         )
         validation = self._with_limit_warning(validation, prepared.limit_reduced, effective_rows)
-        if not self._capacity.acquire(blocking=False):
+        wait_started_at = perf_counter()
+        acquired = self._capacity.acquire(timeout=self._policy.queue_wait_seconds)
+        QUERY_QUEUE_WAIT_SECONDS.labels(config.type.value).observe(perf_counter() - wait_started_at)
+        if not acquired:
             result = QueryExecutionResult(
                 connection_id=connection_id,
                 executed=False,
@@ -80,9 +92,11 @@ class QueryExecutionService:
                 error_code="QUERY_CAPACITY_EXCEEDED",
                 message="No hay capacidad disponible para ejecutar otra consulta.",
             )
+            QUERY_REQUESTS_TOTAL.labels(config.type.value, "execute", "capacity_rejected").inc()
             self._audit_execution(connection_id, sql, result, tool_name)
             return result
 
+        QUERY_IN_PROGRESS.labels(config.type.value).inc()
         try:
             adapter = self._connections.get_adapter(connection_id)
             adapter_result = adapter.execute_read_query(
@@ -118,6 +132,13 @@ class QueryExecutionService:
             )
         finally:
             self._capacity.release()
+            QUERY_IN_PROGRESS.labels(config.type.value).dec()
+        QUERY_REQUESTS_TOTAL.labels(
+            config.type.value, "execute", "success" if result.executed else "error"
+        ).inc()
+        QUERY_DURATION_SECONDS.labels(config.type.value, "execute").observe(
+            result.duration_ms / 1000
+        )
         self._audit_execution(connection_id, sql, result, tool_name)
         return result
 
@@ -140,6 +161,7 @@ class QueryExecutionService:
                 error_code="SQL_VALIDATION_BLOCKED",
                 message="La consulta fue bloqueada antes de generar el plan.",
             )
+            self._record_blocked_metrics(config.type.value, "explain", validation)
             self._audit_plan(connection_id, sql, result)
             return result
 
@@ -154,7 +176,10 @@ class QueryExecutionService:
             effective_rows,
         )
         validation = self._with_limit_warning(validation, prepared.limit_reduced, effective_rows)
-        if not self._capacity.acquire(blocking=False):
+        wait_started_at = perf_counter()
+        acquired = self._capacity.acquire(timeout=self._policy.queue_wait_seconds)
+        QUERY_QUEUE_WAIT_SECONDS.labels(config.type.value).observe(perf_counter() - wait_started_at)
+        if not acquired:
             result = QueryPlanResult(
                 connection_id=connection_id,
                 explained=False,
@@ -163,9 +188,11 @@ class QueryExecutionService:
                 error_code="QUERY_CAPACITY_EXCEEDED",
                 message="No hay capacidad disponible para generar otro plan.",
             )
+            QUERY_REQUESTS_TOTAL.labels(config.type.value, "explain", "capacity_rejected").inc()
             self._audit_plan(connection_id, sql, result)
             return result
 
+        QUERY_IN_PROGRESS.labels(config.type.value).inc()
         try:
             adapter = self._connections.get_adapter(connection_id)
             adapter_plan = adapter.explain_read_query(
@@ -194,6 +221,13 @@ class QueryExecutionService:
             )
         finally:
             self._capacity.release()
+            QUERY_IN_PROGRESS.labels(config.type.value).dec()
+        QUERY_REQUESTS_TOTAL.labels(
+            config.type.value, "explain", "success" if result.explained else "error"
+        ).inc()
+        QUERY_DURATION_SECONDS.labels(config.type.value, "explain").observe(
+            result.duration_ms / 1000
+        )
         self._audit_plan(connection_id, sql, result)
         return result
 
@@ -234,6 +268,16 @@ class QueryExecutionService:
             message=f"Se aplicó un límite exterior máximo de {maximum_rows} filas.",
         )
         return validation.model_copy(update={"warnings": (*validation.warnings, warning)})
+
+    @staticmethod
+    def _record_blocked_metrics(
+        engine: str,
+        operation: str,
+        validation: SqlValidationResult,
+    ) -> None:
+        QUERY_REQUESTS_TOTAL.labels(engine, operation, "blocked").inc()
+        for reason in validation.blocked_reasons:
+            QUERY_BLOCKED_TOTAL.labels(engine, reason.code).inc()
 
     @staticmethod
     def _blocked_execution(

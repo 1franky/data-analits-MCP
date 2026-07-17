@@ -81,6 +81,12 @@ usuario. La sesión readonly impide escrituras PostgreSQL ordinarias, pero una f
 tener efectos externos; los privilegios de función son una frontera imprescindible. La denylist es
 defensa adicional, no prueba formal de ausencia de efectos.
 
-Sprint 4 no incorpora autenticación/autorización MCP, rate limiting distribuido, pool de conexiones,
-logs estructurados, readiness, rotación/retención de auditoría ni gestión nativa de secretos. La red
-Docker compartida sigue siendo una frontera de confianza provisional.
+Sprint 4 no incorpora autenticación/autorización MCP ni rate limiting distribuido; Sprint 10 añade
+logs JSON estructurados, `request_id`, `GET /ready` y métricas (`GET /metrics`, ver
+[architecture.md](architecture.md#observabilidad) y [operations.md](operations.md)), pero **no**
+incorpora pool de conexiones real (cada operación sigue abriendo y cerrando su propia conexión),
+rotación/retención de auditoría ni gestión nativa de secretos (Vault, Docker secrets) — los
+secretos siguen pasando por variables de entorno, con la responsabilidad de sustituirlos y
+protegerlos a cargo del operador (ver checklist en [operations.md](operations.md)). La red Docker
+compartida sigue siendo una frontera de confianza provisional; `/metrics` y `/ready`, igual que
+`/health` y las tools MCP, no tienen autenticación propia.

@@ -77,7 +77,9 @@ reduce uno mayor. Además aplica:
 
 - timeout de conexión/sentencia/locks acotado por la configuración de la conexión;
 - máximo de bytes serializados;
-- semáforo no bloqueante de consultas y planes por proceso;
+- semáforo de consultas y planes por proceso, con espera acotada configurable
+  (`queue_wait_seconds`, por defecto `0` = rechazo inmediato) antes de rechazar con
+  `QUERY_CAPACITY_EXCEEDED`;
 - sesión y rol readonly (PostgreSQL: `connection.read_only = True`; MariaDB:
   `SET SESSION TRANSACTION READ ONLY` + `SET SESSION max_statement_time`);
 - rollback explícito y cierre después de cada operación.

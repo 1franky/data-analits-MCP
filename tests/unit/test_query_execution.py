@@ -1,7 +1,8 @@
 """Tests that only validated reads reach adapters and that every decision is audited."""
 
 from pathlib import Path
-from threading import Event, Thread
+from threading import Event, Thread, Timer
+from time import perf_counter
 
 from app.models.audit import AuditStatus
 from app.models.query import QueryPolicyConfig
@@ -118,3 +119,60 @@ def test_concurrency_limit_rejects_second_query_without_adapter_call(tmp_path: P
     assert second.error_code == "QUERY_CAPACITY_EXCEEDED"
     assert first_results == [True]
     assert adapter.execute_calls == 1
+
+
+def test_queue_wait_seconds_allows_a_delayed_second_query_to_succeed(tmp_path: Path) -> None:
+    adapter = QueryStubAdapter()
+    adapter.started_event = Event()
+    adapter.release_event = Event()
+    _connections, _validator, service, _repository, _adapter = build_query_services(
+        tmp_path / "audit.db",
+        adapter=adapter,
+        policy=QueryPolicyConfig(max_concurrent_queries=1, queue_wait_seconds=2),
+    )
+    first_results: list[bool] = []
+
+    def execute_first() -> None:
+        first_results.append(service.execute("postgres-demo", "SELECT 1").executed)
+
+    thread = Thread(target=execute_first)
+    thread.start()
+    assert adapter.started_event.wait(timeout=5)
+
+    Timer(0.2, adapter.release_event.set).start()
+    second = service.execute("postgres-demo", "SELECT 2")
+    thread.join(timeout=5)
+
+    assert second.executed is True
+    assert first_results == [True]
+
+
+def test_queue_wait_seconds_rejects_once_the_wait_window_elapses(tmp_path: Path) -> None:
+    adapter = QueryStubAdapter()
+    adapter.started_event = Event()
+    adapter.release_event = Event()
+    _connections, _validator, service, _repository, _adapter = build_query_services(
+        tmp_path / "audit.db",
+        adapter=adapter,
+        policy=QueryPolicyConfig(max_concurrent_queries=1, queue_wait_seconds=0.2),
+    )
+    first_results: list[bool] = []
+
+    def execute_first() -> None:
+        first_results.append(service.execute("postgres-demo", "SELECT 1").executed)
+
+    thread = Thread(target=execute_first)
+    thread.start()
+    assert adapter.started_event.wait(timeout=5)
+
+    started_at = perf_counter()
+    second = service.execute("postgres-demo", "SELECT 2")
+    elapsed = perf_counter() - started_at
+
+    adapter.release_event.set()
+    thread.join(timeout=5)
+
+    assert second.executed is False
+    assert second.error_code == "QUERY_CAPACITY_EXCEEDED"
+    assert elapsed >= 0.2
+    assert first_results == [True]

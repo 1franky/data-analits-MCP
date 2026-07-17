@@ -1,6 +1,7 @@
 """Deterministic document adapter and service builder shared by Sprint 9 tests."""
 
 from pathlib import Path
+from threading import Event
 
 from pydantic import JsonValue, SecretStr
 
@@ -70,6 +71,8 @@ class DocumentQueryStubAdapter(DocumentDatabaseAdapter):
         self.last_filter: dict[str, JsonValue] | None = None
         self.last_pipeline: list[dict[str, JsonValue]] | None = None
         self.fail = False
+        self.started_event: Event | None = None
+        self.release_event: Event | None = None
 
     @property
     def capabilities(self) -> ConnectionCapabilities:
@@ -98,6 +101,10 @@ class DocumentQueryStubAdapter(DocumentDatabaseAdapter):
         self.find_calls += 1
         self.last_collection = collection
         self.last_filter = filter
+        if self.started_event is not None:
+            self.started_event.set()
+        if self.release_event is not None:
+            self.release_event.wait(timeout=5)
         if self.fail:
             raise DatabaseOperationError(
                 code="DATABASE_QUERY_ERROR",
@@ -121,6 +128,10 @@ class DocumentQueryStubAdapter(DocumentDatabaseAdapter):
         self.aggregate_calls += 1
         self.last_collection = collection
         self.last_pipeline = pipeline
+        if self.started_event is not None:
+            self.started_event.set()
+        if self.release_event is not None:
+            self.release_event.wait(timeout=5)
         if self.fail:
             raise DatabaseOperationError(
                 code="DATABASE_QUERY_ERROR",

@@ -1,5 +1,6 @@
 """Privacy-preserving audit event creation."""
 
+import logging
 from datetime import UTC, datetime
 from hashlib import sha256
 from uuid import uuid4
@@ -21,6 +22,25 @@ class AuditService:
     ) -> None:
         self._repository = repository
         self._enabled = config.enabled
+        self._logger = logging.getLogger("app.audit")
+
+    def _log_event(self, record: AuditRecord) -> None:
+        self._logger.info(
+            "audit_event",
+            extra={
+                "event_id": record.event_id,
+                "tool_name": record.tool_name,
+                "connection_id": record.connection_id,
+                "operation": record.operation.value,
+                "statement_type": record.statement_type,
+                "executed": record.executed,
+                "blocked": record.blocked,
+                "duration_ms": record.duration_ms,
+                "row_count": record.row_count,
+                "status": record.status.value,
+                "error_code": record.error_code,
+            },
+        )
 
     def record(
         self,
@@ -64,6 +84,7 @@ class AuditService:
             error_code=error_code,
         )
         self._repository.append(record)
+        self._log_event(record)
         return record
 
     def record_document_index(
@@ -102,6 +123,7 @@ class AuditService:
             error_code=error_code,
         )
         self._repository.append(record)
+        self._log_event(record)
         return record
 
     def record_document_search(
@@ -137,6 +159,7 @@ class AuditService:
             error_code=error_code,
         )
         self._repository.append(record)
+        self._log_event(record)
         return record
 
     def record_document_query(
@@ -183,6 +206,7 @@ class AuditService:
             error_code=error_code,
         )
         self._repository.append(record)
+        self._log_event(record)
         return record
 
     def record_generation(
@@ -240,4 +264,5 @@ class AuditService:
             error_code=error_code,
         )
         self._repository.append(record)
+        self._log_event(record)
         return record
