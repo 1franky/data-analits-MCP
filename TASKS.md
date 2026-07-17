@@ -9,12 +9,16 @@ exige una demostración end-to-end con un proveedor LLM real dentro de Open WebU
 no puede ejecutar por sí mismo — pasan a `DONE` cuando el usuario confirme que las ejecutó.
 
 Sprint 9 fue aprobado explícitamente y acotado a HU-902 (MariaDB) y HU-904 (MongoDB): ambos
-motores tienen imagen Docker ARM64 nativa confirmada, quedan `DONE` e implementados en la rama
-actual, con su validación reproducible registrada más abajo. HU-901 (SQL Server) y HU-903
-(Informix) quedan `BLOCKED` — SQL Server no publica imagen ARM64 nativa (solo x86_64/emulación
-Rosetta) e Informix no tiene soporte ARM64 confirmado para versiones modernas; no se investigan
-más en esta pasada. No se inicia Sprint 10 ni historias posteriores hasta recibir aprobación
-explícita.
+motores tienen imagen Docker ARM64 nativa confirmada, quedan `DONE` e implementados en main. HU-901
+(SQL Server) y HU-903 (Informix) quedan `BLOCKED` — SQL Server no publica imagen ARM64 nativa (solo
+x86_64/emulación Rosetta) e Informix no tiene soporte ARM64 confirmado para versiones modernas; no
+se investigan más en esta pasada.
+
+Sprint 10 fue aprobado explícitamente. Sus tres historias (HU-1001 a HU-1003) quedan `DONE` e
+implementadas en la rama actual, con su validación reproducible registrada más abajo. Es el último
+sprint planificado en este documento; no hay ningún Sprint 11 definido. Cualquier trabajo posterior
+requiere primero definir su alcance y aprobación explícita, siguiendo el mismo proceso de todos los
+sprints anteriores.
 
 ## Sprint 0 — Descubrimiento, arquitectura y bootstrap
 
@@ -104,9 +108,9 @@ explícita.
 
 | Historia | Estado | Dependencias | Archivos previstos | Pruebas requeridas | Criterios de aceptación | Bloqueos |
 |---|---|---|---|---|---|---|
-| HU-1001 Observabilidad | TODO | Flujos completos | Logs, métricas, endpoints | Latencia, errores, bloqueos, request ID | JSON logs y health/readiness diferenciados | Métricas requieren flujos reales |
-| HU-1002 Control de concurrencia | TODO | Ejecución real | Pool, semáforos/backpressure | Carga básica, timeout y límites | Consumo controlado en Free Tier | Dimensionar con mediciones |
-| HU-1003 Despliegue seguro | TODO | Sistema completo | Guías/checklists/Compose | Backup, upgrade y rollback | Puertos/secretos mínimos; operación documentada | Requiere persistencias definitivas |
+| HU-1001 Observabilidad | DONE | Flujos completos | `app/observability/`, `app/api/health.py`, `app/api/metrics.py`, `app/services/readiness.py` | Latencia, errores, bloqueos, request ID | JSON logs y health/readiness diferenciados | Ninguno |
+| HU-1002 Control de concurrencia | DONE | Ejecución real | `app/models/query.py`, `app/services/query_execution.py`, `app/services/document_query_execution.py`, `compose.yaml` | Carga básica, timeout y límites | Consumo controlado en Free Tier | Límites de recursos son punto de partida sin medición de tráfico real |
+| HU-1003 Despliegue seguro | DONE | Sistema completo | `scripts/backup_volume.sh`, `scripts/restore_volume.sh`, `docs/operations.md` | Backup, upgrade y rollback | Puertos/secretos mínimos; operación documentada | Ninguno |
 
 ## Evidencia de validación de Sprint 0
 
@@ -402,3 +406,51 @@ que fallaba al intentar leer `connections.yaml` real; se corrigió replicando el
 fixture). (2) `scripts/smoke_mcp.py` seguía con la lista de 25 tools de Sprint 8 y nunca ejercitaba
 MariaDB ni MongoDB; se amplió con las 4 tools nuevas y llamadas reales contra ambos laboratorios,
 tal como exigía la verificación del plan aprobado.
+
+## Evidencia de validación de Sprint 10
+
+Validación ejecutada el 2026-07-17 sobre Docker Desktop ARM64:
+
+```text
+pytest unitario/contratos/STDIO: PASS — 332 passed, 33 integration deselected en 10.84s
+pytest integración (PostgreSQL + MariaDB + MongoDB + Qdrant): PASS — suite completa 365 passed en
+  13.89s (ejecutado en la red ai-platform con RUN_POSTGRES_INTEGRATION=1, RUN_MARIADB_INTEGRATION=1,
+  RUN_MONGODB_INTEGRATION=1, RUN_QDRANT_INTEGRATION=1)
+ruff check / ruff format --check / mypy app tests: PASS — All checks passed, 193 files already
+  formatted, no issues found in 191 source files
+docker compose config --quiet: PASS
+docker build --target test: PASS
+docker compose up -d --build: PASS — 5 servicios healthy, versión 0.9.0
+GET /health: PASS — contrato sin cambios ({"status":"ok","service":"data-platform-mcp","version":
+  "0.9.0"})
+GET /ready: PASS — HTTP 200, status="ready", 3 checks (connections/audit_repository/
+  catalog_scheduler) sin abrir conexiones nuevas a BD; header x-request-id presente y distinto por
+  request, confirmado con curl
+GET /metrics: PASS — formato Prometheus/OpenMetrics (text/plain; version=1.0.0), default collectors
+  de proceso presentes; tras ejercitar execute_read_query (MariaDB) y execute_mongo_find (MongoDB)
+  vía scripts/smoke_mcp.py, aparecen data_platform_query_requests_total, _duration_seconds,
+  _queue_wait_seconds, _in_progress labeladas por engine/operation/status
+logs JSON: PASS — confirmado en docker compose logs: una línea JSON por evento
+  (uvicorn.access + app.access "request_completed"), mismo request_id correlacionado en ambas líneas
+  de un mismo request
+límites de recursos Docker: PASS — docker inspect confirma Memory/NanoCpus en los 5 servicios
+  (data-platform-mcp 512M/1.0cpu, postgres-lab 1G/1.0cpu, mariadb-lab/mongo-lab/qdrant 512M/0.5cpu
+  cada uno)
+backpressure: PASS — 5 tests nuevos con barrera threading.Event (2 SQL + 3 Mongo, incluido el
+  rechazo instantáneo que faltaba en Mongo) verifican espera acotada configurable
+  (queue_wait_seconds) y rechazo QUERY_CAPACITY_EXCEEDED tras expirar la espera
+backup/restore real: PASS — scripts/backup_volume.sh contra el volumen real mcp_postgres-data
+  (deteniendo/reiniciando postgres-lab), scripts/restore_volume.sh contra un volumen desechable de
+  prueba, contenido verificado (estructura de datos PostgreSQL completa); postgres-lab quedó healthy
+  tras el ciclo completo
+smoke MCP HTTP: PASS — 29 tools, más GET /ready y GET /metrics verificados vía httpx dentro del
+  mismo script (scripts/smoke_mcp.py ampliado)
+runtime restrictions: PASS — UID app (10001), raíz read-only, cap_drop ALL, no-new-privileges
+runtime platform: PASS — los 5 servicios corren linux/arm64 sobre la red externa ai-platform
+```
+
+Nota: los valores de `deploy.resources.limits` en `compose.yaml` y el default de `queue_wait_seconds`
+(`0`, idéntico al rechazo inmediato de sprints anteriores) son un punto de partida sin medición de
+tráfico real, como ya anticipaba el bloqueo "Dimensionar con mediciones" de HU-1002 — quedan
+documentados en `docs/operations.md` y `docs/architecture.md` como valores a ajustar observando
+`/metrics`/`docker stats` bajo carga real, no como una cifra derivada de benchmarking.

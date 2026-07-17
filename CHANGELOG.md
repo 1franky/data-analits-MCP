@@ -139,6 +139,24 @@ Todos los cambios relevantes de este proyecto se documentan en este archivo. El 
 - Pruebas de validación documental, adaptador MongoDB, contrato MCP e integración real contra
   MariaDB y MongoDB, incluida verificación explícita de que las escrituras con las credenciales
   `mcp_readonly` fallan en el servidor (no solo en el cliente) en ambos motores nuevos.
+- Logs JSON estructurados (stdlib `logging`, sin dependencia nueva) para el proceso y los loggers
+  de uvicorn, con `request_id` correlacionado vía middleware ASGI puro y header `X-Request-Id`.
+- Logs de auditoría (`audit_event`) emitidos junto a cada registro persistido en `audit.db`,
+  reutilizando solo campos no sensibles ya existentes.
+- Endpoint `GET /ready`, distinto de `GET /health`, que reporta readiness real (conexiones,
+  catálogo, índice documental) sin abrir conexiones nuevas en cada llamada.
+- Endpoint `GET /metrics` en formato Prometheus/OpenMetrics (`prometheus_client`), con contadores,
+  histogramas y gauges de solicitudes, duración, espera de capacidad y bloqueos por motor/operación,
+  más métricas de memoria/CPU del proceso.
+- Campo `queue_wait_seconds` en la política de consultas: el semáforo de concurrencia admite espera
+  acotada configurable antes de rechazar (`QUERY_CAPACITY_EXCEEDED`); por defecto `0`, idéntico al
+  comportamiento de rechazo inmediato de sprints anteriores.
+- Límites de recursos Docker (`deploy.resources.limits`, cpus/memory) en los 5 servicios de
+  `compose.yaml`, como punto de partida para Oracle Cloud Free Tier.
+- Scripts `scripts/backup_volume.sh`/`scripts/restore_volume.sh` para respaldar y restaurar
+  cualquiera de los 5 volúmenes nombrados vía un contenedor auxiliar de solo lectura.
+- Guía de operación (`docs/operations.md`): procedimientos de backup, restore, upgrade y rollback
+  basados en el mecanismo `*_IMAGE_TAG` ya existente, y checklist de puertos/secretos.
 
 ### Security
 
@@ -194,6 +212,8 @@ Todos los cambios relevantes de este proyecto se documentan en este archivo. El 
   contenido.
 - SQL Server e Informix permanecen sin adaptador ni imagen de laboratorio: SQL Server no publica
   imagen Docker ARM64 nativa e Informix no tiene soporte ARM64 confirmado para versiones modernas.
+- `GET /metrics` y `GET /ready` no tienen autenticación propia, mismo modelo de confianza que
+  `GET /health` y las tools MCP: la red `ai-platform` sigue siendo la única frontera.
 
 ### Fixed
 
@@ -206,7 +226,10 @@ Todos los cambios relevantes de este proyecto se documentan en este archivo. El 
 
 - Vistas y vistas materializadas como objetos explorables o explicables.
 - Ejecución de escritura de cualquier tipo.
-- Autenticación, consulta/retención administrativa de auditoría y métricas operativas.
+- Autenticación y consulta/retención administrativa de auditoría (las métricas operativas ya se
+  cubren desde Sprint 10 vía `GET /metrics`).
+- Pool de conexiones real a base de datos (cada operación sigue abriendo y cerrando su propia
+  conexión) y gestión nativa de secretos de producción (Vault, Docker secrets).
 - Embeddings locales, formatos de documento adicionales (PDF y otros) más allá de
   `.md`/`.txt`/`.sql`/`.json`/`.yaml`.
 - Demostración end-to-end automatizada de HU-802/HU-803 (requiere un proveedor LLM real dentro de

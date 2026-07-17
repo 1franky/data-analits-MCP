@@ -45,6 +45,7 @@ from app.services import (
     QueryExecutionService,
     QueryValidationService,
 )
+from app.services.readiness import ReadinessService
 
 
 @lru_cache(maxsize=1)
@@ -293,4 +294,17 @@ def get_document_query_execution_service() -> DocumentQueryExecutionService:
         validator=get_document_query_validation_service(),
         audit=get_audit_service(),
         policy=get_connections_config().query,
+    )
+
+
+@lru_cache(maxsize=1)
+def get_readiness_service() -> ReadinessService:
+    """Build the readiness service from already-validated startup state."""
+    config = get_connections_config()
+    return ReadinessService(
+        connections=get_connection_service(),
+        catalog_scheduler=get_catalog_scheduler(),
+        audit_repository=get_audit_repository(),
+        config=config,
+        document_index_scheduler=get_document_index_scheduler() if config.rag.enabled else None,
     )

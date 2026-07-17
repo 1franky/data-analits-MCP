@@ -174,8 +174,10 @@ funciones peligrosas conocidas y parámetros posicionales. El servicio exige coi
 placeholders nombrados, reescribe el límite con el AST y solo entonces solicita el adaptador.
 
 El límite efectivo de filas es el menor entre solicitud, conexión y configuración global. El timeout
-efectivo nunca excede el de la conexión. Un semáforo de proceso limita concurrencia y el adaptador
-limita además bytes serializados. Toda transacción de consulta termina con `ROLLBACK`.
+efectivo nunca excede el de la conexión. Un semáforo de proceso limita concurrencia — desde Sprint
+10, con espera acotada configurable (`queue_wait_seconds`, por defecto `0` = rechazo inmediato,
+comportamiento idéntico al de sprints anteriores) antes de rechazar con `QUERY_CAPACITY_EXCEEDED` —
+y el adaptador limita además bytes serializados. Toda transacción de consulta termina con `ROLLBACK`.
 
 ## Flujo de plan
 
@@ -211,6 +213,34 @@ como `0.9.0`; un cambio de implementación no obliga a romper el contrato. Las p
 compatibilidad y el catálogo completo están en [mcp-contracts.md](mcp-contracts.md) y
 [mcp-tools.md](mcp-tools.md).
 
+## Observabilidad
+
+Sprint 10 añade logging estructurado, correlación de peticiones y métricas, sin dependencias
+pesadas ni cambios en los contratos MCP existentes:
+
+- **Logs JSON**: `app/observability/logging.py` instala un único `StreamHandler` con formato JSON
+  (stdlib `logging`, sin `structlog`) en el logger root y en los loggers de uvicorn
+  (`uvicorn`/`uvicorn.error`/`uvicorn.access`), leyendo el nivel de `LOG_LEVEL`. Cada línea incluye
+  `timestamp`, `level`, `logger`, `message` y `request_id`.
+- **`request_id`**: `RequestContextMiddleware` (`app/observability/middleware.py`) es un middleware
+  ASGI puro — no `BaseHTTPMiddleware`, que bufferiza la respuesta y rompería el streaming de
+  `/mcp` — que genera un `uuid4()` por petición HTTP, lo propaga vía `ContextVar` a cualquier log de
+  cualquier capa (incluida la auditoría), y lo devuelve en el header `X-Request-Id`. Como todas las
+  tools MCP entran por un único `POST /mcp`, este log no distingue tool por tool; esa granularidad
+  la dan las métricas (por motor/operación) y los eventos de auditoría.
+- **Logs de auditoría**: `AuditService` emite un log `audit_event` junto a cada registro que ya
+  persiste en `audit.db`, reutilizando solo los campos no sensibles ya existentes (hashes, nunca SQL
+  ni prompt en claro).
+- **`GET /ready`**: reporta readiness real (conexiones, catálogo, índice documental si RAG está
+  habilitado) sin abrir conexiones nuevas en cada llamada — reutiliza que `validate_startup()` ya se
+  ejecutó al arrancar el proceso. Devuelve HTTP 503 si algún check falla. El `HEALTHCHECK` de Docker
+  sigue apuntando a `/health` (liveness) deliberadamente, para no reiniciar el contenedor por baches
+  transitorios de un scheduler que no son fallos de proceso.
+- **`GET /metrics`**: expone métricas en formato Prometheus/OpenMetrics vía `prometheus_client`
+  (`data_platform_query_requests_total`, `_duration_seconds`, `_queue_wait_seconds`, `_in_progress`,
+  `_blocked_total`, labeladas por motor/operación/estado), más los *default collectors* de memoria y
+  CPU del proceso. Sin autenticación, mismo modelo de confianza que `/health` y las tools MCP hoy.
+
 ## Persistencia y despliegue
 
 `catalog.db` guarda metadata técnica; `audit.db` guarda eventos de seguridad append-only con hash
@@ -219,6 +249,12 @@ documentos indexados. Todas usan WAL y `busy_timeout` y residen en `/app/data`, 
 volumen nombrado `catalog-data`; ninguna tabla de auditoría contiene SQL, parámetros, valores ni
 texto de documentos. Los vectores de embeddings viven exclusivamente en Qdrant (volumen nombrado
 `qdrant-data`), nunca en SQLite.
+
+Desde Sprint 10, los 5 servicios de `compose.yaml` declaran `deploy.resources.limits` (cpus/memory)
+como punto de partida para operar dentro de Oracle Cloud Free Tier — sin medición de tráfico real
+todavía, a ajustar observando `/metrics` y `docker stats` bajo carga. Los procedimientos de backup,
+restore, upgrade y rollback de los 5 volúmenes nombrados, y un checklist de puertos/secretos, están
+en [operations.md](operations.md).
 
 MCP, PostgreSQL, Qdrant, MariaDB y MongoDB comparten la red Docker externa `ai-platform`; Open WebUI
 puede vivir en otro Compose y resolver `data-platform-mcp:8000` (validado en Sprint 8 con un
@@ -236,9 +272,12 @@ réplicas requerirían persistencia y coordinación compartidas.
   escrituras PostgreSQL, pero una función privilegiada podría tener efectos externos.
 - La denylist complementa una allowlist estructural y debe revisarse al actualizar PostgreSQL o
   SQLGlot.
-- El semáforo y el scheduler son por proceso; SQLite no es la opción para múltiples réplicas.
-- `/health` es liveness, no readiness de PostgreSQL ni del catálogo.
-- No hay autenticación MCP; `ai-platform` sigue siendo una frontera operativa provisional.
+- El semáforo y el scheduler son por proceso; SQLite no es la opción para múltiples réplicas. No
+  existe un pool de conexiones real: cada operación abre y cierra su propia conexión al motor.
+- `/health` es liveness; desde Sprint 10, `/ready` reporta readiness real (conexiones, catálogo,
+  índice documental) sin abrir conexiones nuevas en cada llamada — ver [Observabilidad](#observabilidad).
+- No hay autenticación MCP; `ai-platform` sigue siendo una frontera operativa provisional. El
+  endpoint `/metrics` (Sprint 10) tampoco tiene autenticación, mismo modelo de confianza.
 - La cardinalidad se infiere solo desde unicidad declarada; no modela relaciones muchos-a-muchos
   implícitas, nulabilidad semántica ni restricciones externas a PostgreSQL.
 - Las imágenes se fijan por versión, no por digest; supply-chain hardening queda pendiente.

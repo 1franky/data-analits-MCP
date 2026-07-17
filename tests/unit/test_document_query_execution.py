@@ -1,8 +1,11 @@
 """Tests ensuring blocked MongoDB requests never reach the adapter."""
 
 from pathlib import Path
+from threading import Event, Thread, Timer
+from time import perf_counter
 
-from tests.document_query_fakes import build_document_query_services
+from app.models.query import QueryPolicyConfig
+from tests.document_query_fakes import DocumentQueryStubAdapter, build_document_query_services
 
 
 def test_valid_find_reaches_the_adapter(tmp_path: Path) -> None:
@@ -80,3 +83,94 @@ def test_audit_never_persists_filter_or_pipeline_in_plain_text(tmp_path: Path) -
         dumped = record.model_dump_json()
         assert "correo_secreto_unico" not in dumped
         assert "x@example.com" not in dumped
+
+
+def test_concurrency_limit_rejects_second_query_without_adapter_call(tmp_path: Path) -> None:
+    adapter = DocumentQueryStubAdapter()
+    adapter.started_event = Event()
+    adapter.release_event = Event()
+    _connections, _validator, execution, _audit_repository, _adapter = (
+        build_document_query_services(
+            tmp_path / "audit.db",
+            adapter=adapter,
+            policy=QueryPolicyConfig(max_concurrent_queries=1),
+        )
+    )
+    first_results: list[bool] = []
+
+    def execute_first() -> None:
+        first_results.append(execution.execute_find("mongodb-demo", "clientes", {}).executed)
+
+    thread = Thread(target=execute_first)
+    thread.start()
+    assert adapter.started_event.wait(timeout=5)
+
+    second = execution.execute_find("mongodb-demo", "clientes", {})
+    adapter.release_event.set()
+    thread.join(timeout=5)
+
+    assert second.executed is False
+    assert second.error_code == "QUERY_CAPACITY_EXCEEDED"
+    assert first_results == [True]
+    assert adapter.find_calls == 1
+
+
+def test_queue_wait_seconds_allows_a_delayed_second_query_to_succeed(tmp_path: Path) -> None:
+    adapter = DocumentQueryStubAdapter()
+    adapter.started_event = Event()
+    adapter.release_event = Event()
+    _connections, _validator, execution, _audit_repository, _adapter = (
+        build_document_query_services(
+            tmp_path / "audit.db",
+            adapter=adapter,
+            policy=QueryPolicyConfig(max_concurrent_queries=1, queue_wait_seconds=2),
+        )
+    )
+    first_results: list[bool] = []
+
+    def execute_first() -> None:
+        first_results.append(execution.execute_find("mongodb-demo", "clientes", {}).executed)
+
+    thread = Thread(target=execute_first)
+    thread.start()
+    assert adapter.started_event.wait(timeout=5)
+
+    Timer(0.2, adapter.release_event.set).start()
+    second = execution.execute_find("mongodb-demo", "clientes", {})
+    thread.join(timeout=5)
+
+    assert second.executed is True
+    assert first_results == [True]
+
+
+def test_queue_wait_seconds_rejects_once_the_wait_window_elapses(tmp_path: Path) -> None:
+    adapter = DocumentQueryStubAdapter()
+    adapter.started_event = Event()
+    adapter.release_event = Event()
+    _connections, _validator, execution, _audit_repository, _adapter = (
+        build_document_query_services(
+            tmp_path / "audit.db",
+            adapter=adapter,
+            policy=QueryPolicyConfig(max_concurrent_queries=1, queue_wait_seconds=0.2),
+        )
+    )
+    first_results: list[bool] = []
+
+    def execute_first() -> None:
+        first_results.append(execution.execute_find("mongodb-demo", "clientes", {}).executed)
+
+    thread = Thread(target=execute_first)
+    thread.start()
+    assert adapter.started_event.wait(timeout=5)
+
+    started_at = perf_counter()
+    second = execution.execute_find("mongodb-demo", "clientes", {})
+    elapsed = perf_counter() - started_at
+
+    adapter.release_event.set()
+    thread.join(timeout=5)
+
+    assert second.executed is False
+    assert second.error_code == "QUERY_CAPACITY_EXCEEDED"
+    assert elapsed >= 0.2
+    assert first_results == [True]

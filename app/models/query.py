@@ -17,6 +17,7 @@ class QueryPolicyConfig(BaseModel):
     global_max_rows: Annotated[int, Field(ge=1, le=10_000)] = 1_000
     max_serialized_bytes: Annotated[int, Field(ge=1_024, le=100_000_000)] = 1_000_000
     max_concurrent_queries: Annotated[int, Field(ge=1, le=64)] = 4
+    queue_wait_seconds: Annotated[float, Field(ge=0, le=60)] = 0
 
 
 class SqlStatementType(StrEnum):

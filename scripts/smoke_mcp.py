@@ -1,4 +1,4 @@
-"""Exercise the public Sprint 4-9 MCP contract through Streamable HTTP."""
+"""Exercise the public Sprint 4-10 MCP contract through Streamable HTTP."""
 
 import argparse
 import asyncio
@@ -7,6 +7,7 @@ from dataclasses import fields, is_dataclass
 from datetime import date, datetime, time
 from typing import Any
 
+import httpx
 from fastmcp import Client
 
 EXPECTED_TOOLS = {
@@ -67,6 +68,26 @@ def json_value(value: Any) -> Any:
     return value
 
 
+async def check_rest_endpoints(base_url: str) -> dict[str, Any]:
+    """Confirm GET /ready and GET /metrics respond over plain HTTP, outside the MCP transport."""
+    async with httpx.AsyncClient(base_url=base_url, timeout=10) as http_client:
+        ready_response = await http_client.get("/ready")
+        if ready_response.status_code != 200:
+            raise RuntimeError(f"/ready respondió {ready_response.status_code}, se esperaba 200")
+        ready_payload = ready_response.json()
+        if ready_payload.get("status") != "ready":
+            raise RuntimeError(f"/ready reportó estado inesperado: {ready_payload}")
+
+        metrics_response = await http_client.get("/metrics")
+        if metrics_response.status_code != 200:
+            raise RuntimeError(f"/metrics respondió {metrics_response.status_code}, esperado 200")
+        if "data_platform_query_requests_total" not in metrics_response.text:
+            raise RuntimeError("/metrics no expuso data_platform_query_requests_total")
+
+    content_type = metrics_response.headers.get("content-type")
+    return {"ready": ready_payload, "metrics_content_type": content_type}
+
+
 async def smoke(
     url: str,
     connection_id: str,
@@ -74,6 +95,7 @@ async def smoke(
     mongo_connection_id: str,
 ) -> dict[str, Any]:
     """Call discovery, refresh and exploration tools through the network transport."""
+    base_url = url.removesuffix("/mcp")
     async with Client(url) as client:
         tools = await client.list_tools()
         tool_names = {tool.name for tool in tools}
@@ -141,6 +163,8 @@ async def smoke(
         if not mongo_find.data.documents:
             raise RuntimeError("execute_mongo_find no devolvió documentos de MongoDB")
 
+    rest_endpoints = await check_rest_endpoints(base_url)
+
     return {
         "transport": "streamable-http",
         "url": url,
@@ -156,6 +180,7 @@ async def smoke(
         "mariadb_query": json_value(mariadb_query.data),
         "mongo_collections": json_value(mongo_collections.data),
         "mongo_find": json_value(mongo_find.data),
+        "rest_endpoints": rest_endpoints,
     }
 
 
