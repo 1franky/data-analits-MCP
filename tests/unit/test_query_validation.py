@@ -151,3 +151,63 @@ def test_outer_limit_is_added_or_reduced_without_increasing_smaller_limit(
     assert preserved.sql.endswith("LIMIT 10")
     assert preserved.row_limit == 10
     assert preserved.limit_reduced is False
+
+
+def test_mariadb_select_with_named_parameter_is_executable(
+    validator: QueryValidationService,
+) -> None:
+    result = validator.validate(
+        "SELECT id, nombre FROM clientes WHERE id = :minimum_id",
+        "mariadb",
+    )
+
+    assert result.valid is True
+    assert result.executable is True
+    assert result.dialect == "mariadb"
+    assert result.parameter_names == ("minimum_id",)
+    assert result.normalized_sql == "SELECT id, nombre FROM clientes WHERE id = :minimum_id"
+
+
+def test_mariadb_outer_limit_preserves_colon_placeholders(
+    validator: QueryValidationService,
+) -> None:
+    prepared = validator.apply_row_limit(
+        "SELECT id FROM clientes WHERE id = :minimum_id",
+        "mariadb",
+        50,
+    )
+
+    assert prepared.sql == "SELECT id FROM clientes WHERE id = :minimum_id LIMIT 50"
+
+
+@pytest.mark.parametrize(
+    ("sql", "reason"),
+    [
+        ("SELECT LOAD_FILE('/etc/passwd')", "DANGEROUS_FUNCTION_NOT_ALLOWED"),
+        ("SELECT SLEEP(10)", "DANGEROUS_FUNCTION_NOT_ALLOWED"),
+        ("SELECT BENCHMARK(1000000, MD5('x'))", "DANGEROUS_FUNCTION_NOT_ALLOWED"),
+        ("SELECT GET_LOCK('x', 10)", "DANGEROUS_FUNCTION_NOT_ALLOWED"),
+        ("SET GLOBAL max_connections = 1", "READ_ONLY_STATEMENT_REQUIRED"),
+        ("SET SESSION sql_mode = ''", "READ_ONLY_STATEMENT_REQUIRED"),
+        ("LOCK TABLES ventas READ", "ADMIN_COMMAND_NOT_ALLOWED"),
+        ("UNLOCK TABLES", "ADMIN_COMMAND_NOT_ALLOWED"),
+        ("KILL 5", "READ_ONLY_STATEMENT_REQUIRED"),
+        ("SHOW GRANTS", "READ_ONLY_STATEMENT_REQUIRED"),
+        ("GRANT SELECT ON demo.* TO 'x'@'%'", "ADMIN_COMMAND_NOT_ALLOWED"),
+        ("LOAD DATA INFILE 'x' INTO TABLE ventas", "SQL_PARSE_ERROR"),
+        ("SELECT * FROM ventas INTO OUTFILE '/tmp/x'", "SQL_PARSE_ERROR"),
+        (
+            "SELECT * FROM ventas; DELETE FROM ventas",
+            "MULTIPLE_STATEMENTS",
+        ),
+    ],
+)
+def test_mariadb_bypasses_are_blocked(
+    validator: QueryValidationService,
+    sql: str,
+    reason: str,
+) -> None:
+    result = validator.validate(sql, "mariadb")
+
+    assert reason in issue_codes(result)
+    assert result.executable is False

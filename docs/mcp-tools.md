@@ -1,10 +1,16 @@
 # Herramientas MCP disponibles
 
-El catálogo contiene 25 tools y es idéntico por Streamable HTTP en `/mcp` y por STDIO mediante
+El catálogo contiene 29 tools y es idéntico por Streamable HTTP en `/mcp` y por STDIO mediante
 `data-platform-mcp-stdio`. Los modelos se serializan como datos estructurados. Los envelopes
-añadidos en Sprint 4, Sprint 5, Sprint 6 y Sprint 7 incluyen `contract_version: "1.0.0"`; consulta la
-[política de compatibilidad](mcp-contracts.md). No existe ninguna herramienta que ejecute
-escrituras ni que invoque el cuerpo de un procedimiento o trigger.
+añadidos en Sprint 4, Sprint 5, Sprint 6, Sprint 7 y Sprint 9 incluyen `contract_version: "1.0.0"`;
+consulta la [política de compatibilidad](mcp-contracts.md). No existe ninguna herramienta que
+ejecute escrituras ni que invoque el cuerpo de un procedimiento o trigger.
+
+Sprint 9 añade MariaDB, que reutiliza exactamente las mismas tools SQL ya documentadas más abajo
+(`validate_sql`, `execute_read_query`, `explain_query`, `list_schemas`, `list_tables`,
+`describe_table`, `list_procedures`, `list_triggers`, etc.) — el dialecto SQL (`postgres` o
+`mariadb`) se resuelve internamente a partir de `connection_id`, nunca lo elige el cliente. MongoDB
+es un motor documental y usa 4 tools propias, documentadas al final de este archivo.
 
 ## `hello_world`
 
@@ -28,7 +34,7 @@ Verifica el proceso MCP sin depender de PostgreSQL ni del catálogo.
   "contract_version": "1.0.0",
   "status": "ok",
   "service": "data-platform-mcp",
-  "server_version": "0.8.0"
+  "server_version": "0.9.0"
 }
 ```
 
@@ -420,3 +426,53 @@ Elimina un documento del índice (metadata SQLite y vectores en Qdrant).
 - Respuesta: `contract_version`, `document_id`, `deleted`, `error_code` y `message`.
 - No es una exclusión permanente: si el archivo fuente sigue en el volumen de documentos, el
   próximo `refresh_document_index` (manual o periódico) lo reindexa de nuevo.
+
+## `list_mongo_collections`
+
+Lista las colecciones visibles (no de sistema) de una conexión MongoDB, en vivo, sin caché.
+
+- Parámetro requerido: `connection_id`.
+- Respuesta: `contract_version`, `connection_id` y `collections` (cada elemento con `name`).
+- A diferencia de `list_tables`, no lee un snapshot cacheado: MongoDB es schemaless y
+  `list_collection_names()` es una llamada barata, así que se consulta directamente en cada
+  invocación. Ver [document-security.md](document-security.md) para el detalle de esta decisión.
+
+## `validate_mongo_query`
+
+Valida un filtro `find` o un pipeline de agregación contra la allowlist de operadores documentales,
+sin ejecutarlo.
+
+- Parámetros: `connection_id`, `collection`, `operation` (`find` o `aggregate`), y `filter` o
+  `pipeline` según corresponda.
+- Respuesta: `valid`, `executable`, `operation`, `collection`, `blocked_reasons` y `warnings`.
+- `$out`, `$merge`, `$function`, `$accumulator`, `$where` y cualquier etapa/operador no reconocido
+  quedan bloqueados por diseño (allowlist fail-closed, no denylist).
+- Registra un evento de auditoría con hash del filtro/pipeline, nunca su contenido.
+
+## `execute_mongo_find`
+
+Valida y ejecuta un `find()` bajo límites de filas, bytes, timeout y concurrencia.
+
+- Parámetros requeridos: `connection_id`, `collection`, `filter`.
+- Parámetros opcionales: `projection`, `max_rows`, `timeout_seconds`.
+- Respuesta: `contract_version`, `connection_id`, `collection`, `operation`, `executed`,
+  `validation`, `documents`, `document_count`, `row_limit`, `truncated`, `serialized_bytes`,
+  `duration_ms`, `error_code` y `message`.
+- Revalida internamente igual que `execute_read_query`: nunca confía en una validación previa
+  aportada por el cliente.
+- Un filtro bloqueado nunca llega al adaptador (`executed: false`,
+  `error_code: "DOCUMENT_VALIDATION_BLOCKED"`).
+
+## `execute_mongo_aggregate`
+
+Valida y ejecuta un pipeline de agregación bajo los mismos límites que `execute_mongo_find`.
+
+- Parámetros requeridos: `connection_id`, `collection`, `pipeline`.
+- Parámetros opcionales: `max_rows`, `timeout_seconds`.
+- Respuesta: misma forma que `execute_mongo_find`.
+- El adaptador añade `{"$limit": max_rows}` al final del pipeline antes de ejecutarlo, como defensa
+  adicional independiente de la validación previa (mismo principio que el `LIMIT` exterior aplicado
+  a SQL).
+- `insertOne`, `updateOne`, `deleteOne`, `$out` y `$merge` nunca están disponibles: el adaptador
+  documental no implementa ningún método de escritura, y estos dos últimos quedan además
+  bloqueados explícitamente en la validación.

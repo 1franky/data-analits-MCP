@@ -20,4 +20,4 @@ async def test_stdio_transport_lists_and_calls_tools() -> None:
 
     assert "list_schemas" in {tool.name for tool in tools}
     assert health.data.contract_version == "1.0.0"
-    assert health.data.server_version == "0.8.0"
+    assert health.data.server_version == "0.9.0"

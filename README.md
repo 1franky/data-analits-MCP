@@ -2,13 +2,15 @@
 
 Data Platform MCP es un servicio independiente del proveedor de LLM para explorar fuentes de datos
 desde clientes compatibles con Model Context Protocol (MCP), incluido Open WebUI. El proyecto se
-construye por sprints y actualmente implementa el **Sprint 8**: integración con Open WebUI como
-cliente MCP nativo (Streamable HTTP, sin proxy ni bridge intermedio) — ver
-[docs/openwebui-integration.md](docs/openwebui-integration.md) para la guía paso a paso, un compose
-de ejemplo aislado en `examples/openwebui/`, y un script de conectividad automatizada. Además
-implementa el **Sprint 7** (RAG documental desacoplado: indexación de documentación funcional desde
-un directorio de solo lectura en un vector store Qdrant, y búsqueda semántica con su propio
-proveedor de embeddings independiente del de generación de SQL — ver [docs/rag.md](docs/rag.md)), el
+construye por sprints y actualmente implementa el **Sprint 9**: un segundo motor SQL, MariaDB
+(mismas tools que PostgreSQL, dialecto `mysql` de SQLGlot resuelto internamente), y el primer
+motor documental, MongoDB (`list_mongo_collections`, `validate_mongo_query`, `execute_mongo_find`,
+`execute_mongo_aggregate`, con una interfaz `DocumentDatabaseAdapter` separada que nunca implementa
+ni expone un método de escritura — ver [docs/document-security.md](docs/document-security.md)).
+SQL Server e Informix quedan bloqueados por falta de soporte ARM64 confirmado. Además implementa el
+**Sprint 8** (integración con Open WebUI como cliente MCP nativo, Streamable HTTP, sin proxy ni
+bridge intermedio — ver [docs/openwebui-integration.md](docs/openwebui-integration.md)), el
+**Sprint 7** (RAG documental desacoplado sobre Qdrant, ver [docs/rag.md](docs/rag.md)), el
 **Sprint 6** (lectura cacheada de procedimientos/funciones y triggers PostgreSQL, y su explicación
 en lenguaje natural vía LLM separando hechos verificables de inferencias) y el **Sprint 5**
 (generación de SQL asistida por LLM sobre el catálogo cacheado, ejecución orquestada bajo
@@ -16,12 +18,13 @@ revalidación completa, aclaraciones ante ambigüedad y reportes XLSX/PDF/CSV/JS
 natural), todo opcional y deshabilitado por defecto, además de la exploración MCP completa y las
 capacidades seguras de conexión, catálogo y SQL de los sprints anteriores.
 
-No existe todavía ejecución de escritura. Ningún procedimiento ni trigger se ejecuta jamás: solo se
-leen sus definiciones desde catálogos internos de PostgreSQL. El catálogo nunca almacena filas de
-negocio, el RAG nunca almacena contenido de documentos ni preguntas de búsqueda en texto plano, y la
-auditoría guarda metadatos de seguridad — nunca el SQL, la pregunta en lenguaje natural, los
-parámetros, los valores devueltos, las definiciones de objetos, el contenido de documentos ni los
-archivos de reporte generados.
+No existe todavía ejecución de escritura en ningún motor. Ningún procedimiento ni trigger se
+ejecuta jamás: solo se leen sus definiciones desde catálogos internos de PostgreSQL/MariaDB. El
+catálogo nunca almacena filas de negocio, el RAG nunca almacena contenido de documentos ni
+preguntas de búsqueda en texto plano, MongoDB nunca expone un método de escritura, y la auditoría
+guarda metadatos de seguridad — nunca el SQL, los filtros/pipelines de MongoDB, la pregunta en
+lenguaje natural, los parámetros, los valores devueltos, las definiciones de objetos, el contenido
+de documentos ni los archivos de reporte generados.
 
 ## Arquitectura actual
 
@@ -72,7 +75,7 @@ Tier ARM64, sujeto al dimensionamiento y monitoreo propios del entorno.
 
 ```bash
 cp .env.example .env
-# Cambia ambas contraseñas de laboratorio dentro de .env.
+# Cambia las contraseñas de laboratorio (PostgreSQL, MariaDB, MongoDB) dentro de .env.
 docker network inspect ai-platform >/dev/null 2>&1 || docker network create ai-platform
 docker compose up -d --build
 docker compose ps
@@ -85,16 +88,20 @@ Respuesta esperada:
 {
   "status": "ok",
   "service": "data-platform-mcp",
-  "version": "0.8.0"
+  "version": "0.9.0"
 }
 ```
 
-El puerto MCP se publica en `127.0.0.1:8000` por defecto y PostgreSQL en
-`127.0.0.1:5432`. Los contenedores de `ai-platform` usan estas URLs internas:
+El puerto MCP se publica en `127.0.0.1:8000` por defecto, PostgreSQL en `127.0.0.1:5432`, MariaDB
+en `127.0.0.1:3306` y MongoDB en `127.0.0.1:27017`. Los contenedores de `ai-platform` usan estas
+URLs internas:
 
 ```text
 MCP:        http://data-platform-mcp:8000/mcp
 PostgreSQL: postgres-lab:5432
+MariaDB:    mariadb-lab:3306
+MongoDB:    mongo-lab:27017
+Qdrant:     qdrant:6333
 ```
 
 Open WebUI puede permanecer en otro proyecto Compose: solo necesita compartir `ai-platform`. Ver
@@ -174,7 +181,7 @@ Variables Compose incluidas en `.env.example`:
 | `MCP_BIND_ADDRESS` | `127.0.0.1` | Interfaz local del MCP/API. |
 | `MCP_PORT` | `8000` | Puerto local del MCP/API. |
 | `LOG_LEVEL` | `info` | Nivel de log de Uvicorn. |
-| `IMAGE_TAG` | `0.8.0` | Etiqueta local de la imagen. |
+| `IMAGE_TAG` | `0.9.0` | Etiqueta local de la imagen. |
 | `CATALOG_DB_PATH` | `/app/data/catalog.db` | SQLite persistente de metadata técnica. |
 | `AUDIT_DB_PATH` | `/app/data/audit.db` | SQLite persistente de eventos SQL sin contenido sensible. |
 | `POSTGRES_IMAGE_TAG` | `17.10` | Etiqueta local del laboratorio PostgreSQL. |
@@ -242,10 +249,10 @@ servicio directamente a Internet. Consulta [seguridad](docs/security.md).
 | Motor | Estado |
 |---|---|
 | PostgreSQL | Sprint 4: exploración MCP versionada, catálogo, SELECT validado y EXPLAIN seguro. |
-| SQL Server | Planificado para Sprint 9. |
-| MariaDB/MySQL | Planificado para Sprint 9. |
-| Informix | Planificado para Sprint 9; driver ARM64 por validar. |
-| MongoDB | Planificado para Sprint 9 con interfaz documental. |
+| MariaDB | Sprint 9: mismas tools SQL que PostgreSQL, dialecto `mysql` de SQLGlot. |
+| MongoDB | Sprint 9: interfaz documental propia, 4 tools, sin método de escritura expuesto. |
+| SQL Server | `BLOCKED` — sin imagen Docker ARM64 nativa disponible. |
+| Informix | `BLOCKED` — soporte ARM64 no confirmado para versiones modernas. |
 | Oracle | Extensión futura. |
 
 ## Roadmap
@@ -253,8 +260,9 @@ servicio directamente a Internet. Consulta [seguridad](docs/security.md).
 El plan se mantiene en [TASKS.md](TASKS.md). Sprint 5 (generación de SQL mediante lenguaje natural
 sobre metadata real, aclaraciones ante ambigüedad y reportes XLSX/PDF/CSV/JSON), Sprint 6 (lectura
 de procedimientos/triggers y explicaciones asistidas por LLM), Sprint 7 (RAG documental sobre
-Qdrant) y Sprint 8 (integración con Open WebUI como cliente MCP nativo) ya están implementados; la
-generación LLM y el RAG siguen deshabilitados por defecto. HU-802 y HU-803 de Sprint 8 quedan
-`IN_PROGRESS` en `TASKS.md` hasta que se confirme su ejecución con un proveedor LLM real dentro de
-Open WebUI (ver [docs/openwebui-integration.md](docs/openwebui-integration.md)). El siguiente hito,
-que no se iniciará sin aprobación, es Sprint 9: adaptadores adicionales. Después sigue hardening.
+Qdrant), Sprint 8 (integración con Open WebUI como cliente MCP nativo) y Sprint 9 (MariaDB y
+MongoDB; SQL Server e Informix bloqueados por soporte ARM64) ya están implementados; la generación
+LLM y el RAG siguen deshabilitados por defecto. HU-802 y HU-803 de Sprint 8 quedan `IN_PROGRESS` en
+`TASKS.md` hasta que se confirme su ejecución con un proveedor LLM real dentro de Open WebUI (ver
+[docs/openwebui-integration.md](docs/openwebui-integration.md)). El siguiente hito, que no se
+iniciará sin aprobación, es Sprint 10: hardening y operación.

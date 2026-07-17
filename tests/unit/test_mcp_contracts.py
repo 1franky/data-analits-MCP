@@ -8,6 +8,8 @@ from app.tools.server import mcp
 EXPECTED_TOOLS = {
     "delete_indexed_document",
     "describe_table",
+    "execute_mongo_aggregate",
+    "execute_mongo_find",
     "execute_read_query",
     "explain_database_object",
     "explain_query",
@@ -20,6 +22,7 @@ EXPECTED_TOOLS = {
     "hello_world",
     "list_connections",
     "list_indexed_documents",
+    "list_mongo_collections",
     "list_procedures",
     "list_relationships",
     "list_schemas",
@@ -30,6 +33,7 @@ EXPECTED_TOOLS = {
     "search_catalog",
     "search_documents",
     "test_connection",
+    "validate_mongo_query",
     "validate_sql",
 }
 
@@ -68,6 +72,15 @@ VERSIONED_TOOLS = {
     "list_indexed_documents": {"documents", "total"},
     "refresh_document_index": {"started_at", "completed_at", "entries", "indexed_count"},
     "delete_indexed_document": {"document_id", "deleted"},
+    "list_mongo_collections": {"connection_id", "collections"},
+    "execute_mongo_find": {"connection_id", "collection", "operation", "executed", "validation"},
+    "execute_mongo_aggregate": {
+        "connection_id",
+        "collection",
+        "operation",
+        "executed",
+        "validation",
+    },
 }
 
 

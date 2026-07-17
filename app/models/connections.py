@@ -84,6 +84,9 @@ class ConnectionCapabilities(BaseModel):
     explain_query: bool = False
     list_procedures: bool = False
     list_triggers: bool = False
+    list_collections: bool = False
+    execute_find: bool = False
+    execute_aggregation: bool = False
 
 
 class ConnectionConfig(BaseModel):
@@ -215,6 +218,14 @@ class ConnectionTestResult(BaseModel):
 
 class SchemaInfo(BaseModel):
     """Database schema metadata."""
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+
+
+class CollectionInfo(BaseModel):
+    """Document database collection metadata; no fixed schema is assumed."""
 
     model_config = ConfigDict(frozen=True)
 

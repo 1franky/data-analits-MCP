@@ -1,6 +1,7 @@
 """Parser-backed SQL validation and safe row-limit rewriting."""
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 
 import sqlglot
 from sqlglot import exp
@@ -13,12 +14,26 @@ from app.models.query import (
     SqlValidationResult,
     ValidationIssue,
 )
-from app.security import PostgresSqlPolicy
+from app.security import MariaDbSqlPolicy, PostgresSqlPolicy
 
 _DML_TYPES = (exp.Insert, exp.Update, exp.Delete, exp.Merge)
 _DDL_TYPES = (exp.Create, exp.Alter, exp.Drop, exp.TruncateTable)
 _PRIVILEGE_TYPES = (exp.Grant, exp.Revoke)
 _READ_ROOT_TYPES = (exp.Select, exp.SetOperation)
+
+
+@dataclass(frozen=True, slots=True)
+class _EnginePolicy:
+    """SQLGlot read dialect and dangerous-function policy for one engine."""
+
+    sqlglot_dialect: str
+    function_is_blocked: Callable[[str], bool]
+
+
+_ENGINE_POLICIES: dict[str, _EnginePolicy] = {
+    "postgres": _EnginePolicy("postgres", PostgresSqlPolicy.function_is_blocked),
+    "mariadb": _EnginePolicy("mysql", MariaDbSqlPolicy.function_is_blocked),
+}
 
 
 class QueryValidationService:
@@ -33,7 +48,8 @@ class QueryValidationService:
                 "SQL_EMPTY",
                 "La consulta SQL no puede estar vacía.",
             )
-        if dialect != "postgres":
+        policy = _ENGINE_POLICIES.get(dialect)
+        if policy is None:
             return self._invalid_without_ast(
                 dialect,
                 "SQL_DIALECT_UNSUPPORTED",
@@ -41,12 +57,12 @@ class QueryValidationService:
             )
 
         try:
-            parsed_expressions = sqlglot.parse(normalized_input, read=dialect)
+            parsed_expressions = sqlglot.parse(normalized_input, read=policy.sqlglot_dialect)
         except SqlglotError:
             return self._invalid_without_ast(
                 dialect,
                 "SQL_PARSE_ERROR",
-                "La consulta no es sintácticamente válida para PostgreSQL.",
+                f"La consulta no es sintácticamente válida para el dialecto '{dialect}'.",
             )
         expressions = tuple(
             expression
@@ -73,10 +89,17 @@ class QueryValidationService:
         root_types = tuple(self._classify(expression) for expression in expressions)
         statement_type = root_types[0] if not multiple else SqlStatementType.MULTIPLE
         for expression, root_type in zip(expressions, root_types, strict=True):
-            self._inspect_expression(expression, root_type, issues, warnings)
+            self._inspect_expression(
+                expression,
+                root_type,
+                issues,
+                warnings,
+                policy.function_is_blocked,
+            )
 
         normalized_sql = "; ".join(
-            expression.sql(dialect=dialect, pretty=False) for expression in expressions
+            expression.sql(dialect=policy.sqlglot_dialect, pretty=False)
+            for expression in expressions
         )
         references = self._referenced_objects(expressions)
         parameter_names = self._parameter_names(expressions, issues)
@@ -103,7 +126,10 @@ class QueryValidationService:
         maximum_rows: int,
     ) -> PreparedReadQuery:
         """Enforce an outer LIMIT without trusting textual SQL manipulation."""
-        expression = sqlglot.parse_one(normalized_sql, read=dialect)
+        policy = _ENGINE_POLICIES.get(dialect)
+        if policy is None:
+            raise ValueError(f"apply_row_limit received an unsupported dialect: {dialect}")
+        expression = sqlglot.parse_one(normalized_sql, read=policy.sqlglot_dialect)
         if not isinstance(expression, _READ_ROOT_TYPES):
             raise ValueError("apply_row_limit requires a parsed read query")
 
@@ -120,7 +146,7 @@ class QueryValidationService:
                 minimum = row_limit
         rewritten = expression.limit(minimum, copy=True)
         return PreparedReadQuery(
-            sql=rewritten.sql(dialect=dialect, pretty=False),
+            sql=rewritten.sql(dialect=policy.sqlglot_dialect, pretty=False),
             row_limit=row_limit,
             limit_reduced=limit_reduced,
         )
@@ -159,6 +185,7 @@ class QueryValidationService:
         root_type: SqlStatementType,
         issues: list[ValidationIssue],
         warnings: list[ValidationIssue],
+        function_is_blocked: Callable[[str], bool],
     ) -> None:
         if not isinstance(expression, _READ_ROOT_TYPES):
             self._append_issue(
@@ -228,9 +255,7 @@ class QueryValidationService:
                 "No se permiten cláusulas de bloqueo en SELECT.",
             )
         for node in nodes:
-            if isinstance(node, exp.Func) and PostgresSqlPolicy.function_is_blocked(
-                self._function_name(node)
-            ):
+            if isinstance(node, exp.Func) and function_is_blocked(self._function_name(node)):
                 self._append_issue(
                     issues,
                     "DANGEROUS_FUNCTION_NOT_ALLOWED",

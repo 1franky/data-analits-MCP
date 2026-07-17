@@ -16,6 +16,38 @@ connections:
       application_name: data-platform-mcp
       sslmode: disable
 
+  - id: mariadb-demo
+    name: MariaDB Demo
+    type: mariadb
+    host: mariadb-lab
+    port: 3306
+    database: demo
+    username: mcp_readonly
+    password_env: MARIADB_DEMO_PASSWORD
+    readonly: true
+    enabled: true
+    connect_timeout_seconds: 10
+    query_timeout_seconds: 30
+    max_rows: 500
+    options:
+      charset: utf8mb4
+
+  - id: mongodb-demo
+    name: MongoDB Demo
+    type: mongodb
+    host: mongo-lab
+    port: 27017
+    database: demo
+    username: mcp_readonly
+    password_env: MONGO_DEMO_PASSWORD
+    readonly: true
+    enabled: true
+    connect_timeout_seconds: 10
+    query_timeout_seconds: 30
+    max_rows: 500
+    options:
+      authSource: demo
+
 catalog:
   enabled: true
   refresh_interval_minutes: 60

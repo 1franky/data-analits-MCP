@@ -50,7 +50,7 @@ audit:
 |---|---|
 | `id` | Único; minúsculas, números y guiones; 1–63 caracteres. |
 | `name` | Nombre visible no vacío. |
-| `type` | Motor conocido. Actualmente solo `postgres` tiene adaptador. |
+| `type` | Motor conocido. `postgres` y `mariadb` tienen adaptador SQL; `mongodb` tiene adaptador documental. |
 | `host` | DNS/IP visible desde el contenedor. |
 | `port` | Entero entre 1 y 65535. |
 | `database` | Base objetivo. |
@@ -65,7 +65,17 @@ audit:
 
 Los tipos declarables son `postgres`, `sqlserver`, `mariadb`, `informix`, `mongodb` y `oracle`.
 Una conexión habilitada falla al arrancar si su adaptador aún no existe. Esto permite documentar
-conexiones futuras como `enabled: false` sin afirmar soporte funcional.
+conexiones futuras como `enabled: false` sin afirmar soporte funcional. `sqlserver` e `informix`
+quedan `enabled: false` por diseño en este laboratorio: SQL Server no publica una imagen Docker
+ARM64 nativa e Informix no tiene soporte ARM64 confirmado para versiones modernas (ver
+`TASKS.md`, Sprint 9, historias `BLOCKED`).
+
+`mongodb` es un motor **documental**, no SQL: no usa `validate_sql`/`execute_read_query`/
+`explain_query` ni aparece en el catálogo técnico de Sprint 2 (`list_tables`/`describe_table`).
+Usa su propio conjunto de tools — `list_mongo_collections`, `validate_mongo_query`,
+`execute_mongo_find`, `execute_mongo_aggregate` — documentadas en
+[mcp-tools.md](mcp-tools.md) y con su propio modelo de seguridad en
+[document-security.md](document-security.md).
 
 ## Secretos
 
@@ -80,9 +90,9 @@ Nunca coloques contraseñas en:
 - argumentos de comandos compartidos;
 - logs o nombres de recursos.
 
-## Opciones PostgreSQL
+## Opciones por motor
 
-El allowlist actual acepta:
+El allowlist de PostgreSQL acepta:
 
 ```text
 application_name, keepalives, keepalives_count, keepalives_idle,
@@ -90,25 +100,40 @@ keepalives_interval, sslcert, sslkey, sslmode, sslrootcert,
 target_session_attrs
 ```
 
-Los campos centrales (`host`, `port`, `database`, `dbname`, `user`, `username`) y cualquier forma
-de secreto o cadena completa (`password`, `passfile`, `sslpassword`, `conninfo`, `dsn`, `uri`) están
-prohibidos dentro de `options`. Opciones desconocidas se rechazan antes de conectar.
+El allowlist de MariaDB acepta:
 
-El laboratorio usa `sslmode: disable` porque opera dentro de Docker local. Para un servidor remoto,
-usa la política TLS exigida por el servidor, por ejemplo `verify-full`, y monta certificados por una
-ruta configurable del contenedor.
+```text
+charset, connect_timeout, ssl_ca, ssl_cert, ssl_key, ssl_verify_cert
+```
+
+El allowlist de MongoDB acepta:
+
+```text
+authSource, tls, tlsAllowInvalidCertificates, directConnection, appName, readPreference
+```
+
+En los tres casos, los campos centrales (`host`, `port`, `database`, `user`/`username`) y cualquier
+forma de secreto o cadena completa (`password`, `passfile`, `sslpassword`, `conninfo`, `dsn`, `uri`)
+están prohibidos dentro de `options`. Opciones desconocidas se rechazan antes de conectar.
+
+El laboratorio PostgreSQL usa `sslmode: disable` porque opera dentro de Docker local. Para un
+servidor remoto, usa la política TLS exigida por el servidor, por ejemplo `verify-full`, y monta
+certificados por una ruta configurable del contenedor. MariaDB/MongoDB siguen el mismo criterio con
+sus propias opciones `ssl_*`/`tls*`.
 
 ## Añadir una conexión
 
-1. Crea un rol de base de datos estrictamente readonly.
+1. Crea un rol de base de datos estrictamente readonly (`SELECT`/`SHOW VIEW` en MariaDB, rol `read`
+   en MongoDB — nunca `readWrite`/`dbAdmin`).
 2. Añade una entrada con ID único.
 3. Define un nombre de variable en `password_env`.
 4. Inyecta esa variable en el contenedor sin versionar su valor.
 5. Reinicia `data-platform-mcp`.
 6. Invoca `list_connections` y después `test_connection`.
 
-Actualmente solo PostgreSQL puede habilitarse. Otros motores deben permanecer `enabled: false`
-hasta que exista y se pruebe su adaptador.
+`postgres` y `mariadb` pueden habilitarse con las tools SQL existentes; `mongodb` puede habilitarse
+con sus propias tools documentales. `sqlserver` e `informix` deben permanecer `enabled: false`
+hasta resolver su soporte ARM64 (ver más arriba).
 
 ## Política del catálogo
 

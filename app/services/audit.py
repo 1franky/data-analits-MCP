@@ -139,6 +139,52 @@ class AuditService:
         self._repository.append(record)
         return record
 
+    def record_document_query(
+        self,
+        *,
+        tool_name: str,
+        connection_id: str,
+        operation: AuditOperation,
+        statement_type: str,
+        payload_hash: str,
+        executed: bool,
+        valid: bool,
+        blocked: bool,
+        blocked_reason_codes: tuple[str, ...],
+        duration_ms: float,
+        row_count: int | None,
+        error_code: str | None = None,
+    ) -> AuditRecord | None:
+        """Append one MongoDB find/aggregate event; only a payload hash is stored."""
+        if not self._enabled:
+            return None
+        status = (
+            AuditStatus.ERROR
+            if error_code is not None and not blocked
+            else AuditStatus.BLOCKED
+            if blocked
+            else AuditStatus.SUCCESS
+        )
+        record = AuditRecord(
+            event_id=str(uuid4()),
+            timestamp=datetime.now(UTC),
+            tool_name=tool_name,
+            connection_id=connection_id,
+            operation=operation,
+            statement_type=statement_type,
+            query_hash=payload_hash,
+            validation_valid=valid,
+            executed=executed,
+            blocked=blocked,
+            blocked_reason_codes=blocked_reason_codes,
+            duration_ms=round(duration_ms, 3),
+            row_count=row_count,
+            status=status,
+            error_code=error_code,
+        )
+        self._repository.append(record)
+        return record
+
     def record_generation(
         self,
         *,

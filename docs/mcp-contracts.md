@@ -4,7 +4,7 @@
 
 Data Platform MCP distingue dos versiones:
 
-- servidor `0.8.0`: versión de la aplicación, imagen y servidor FastMCP;
+- servidor `0.9.0`: versión de la aplicación, imagen y servidor FastMCP;
 - contrato `1.0.0`: versión semántica de los envelopes MCP introducidos en Sprint 4.
 
 `contract_version` aparece en la raíz de `health_check`, `get_connection_capabilities`,
@@ -64,6 +64,9 @@ si no existe, el error explica que debe llamarse `refresh_schema_cache`.
 | `list_indexed_documents` | `connection_id?`, `domain?` | `contract_version`, `documents`, `total` |
 | `refresh_document_index` | `source?` | `contract_version`, `started_at`, `completed_at`, `entries`, conteos agregados |
 | `delete_indexed_document` | `document_id` | `contract_version`, `document_id`, `deleted` |
+| `list_mongo_collections` | `connection_id` | `contract_version`, `connection_id`, `collections` |
+| `execute_mongo_find` | `connection_id`, `collection`, `filter`, `projection?`, `max_rows?`, `timeout_seconds?` | `contract_version`, `connection_id`, `collection`, `operation`, `executed`, `validation` |
+| `execute_mongo_aggregate` | `connection_id`, `collection`, `pipeline`, `max_rows?`, `timeout_seconds?` | `contract_version`, `connection_id`, `collection`, `operation`, `executed`, `validation` |
 
 `list_procedures` y `list_triggers` leen el mismo snapshot cacheado que el resto de tools de
 exploración (Sprint 2), sin conectarse a PostgreSQL durante la llamada. `explain_database_object`
