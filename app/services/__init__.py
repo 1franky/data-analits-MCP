@@ -4,6 +4,8 @@ from app.services.audit import AuditService
 from app.services.catalog import CatalogService
 from app.services.connections import ConnectionService
 from app.services.document_index import DocumentIndexService
+from app.services.document_query_execution import DocumentQueryExecutionService
+from app.services.document_query_validation import DocumentQueryValidationService
 from app.services.document_search import DocumentSearchService
 from app.services.generation import GenerationService
 from app.services.generation_execution import GenerationExecutionService
@@ -16,6 +18,8 @@ __all__ = [
     "CatalogService",
     "ConnectionService",
     "DocumentIndexService",
+    "DocumentQueryExecutionService",
+    "DocumentQueryValidationService",
     "DocumentSearchService",
     "GenerationExecutionService",
     "GenerationService",

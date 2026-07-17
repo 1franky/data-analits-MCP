@@ -21,8 +21,13 @@ embeddings opcional e independiente del de generación de SQL. El RAG no reempla
 complementa la estructura técnica real con contexto funcional (ver [rag.md](rag.md)). Sprint 8 no
 añade tools ni código nuevo: documenta y valida la integración con Open WebUI como cliente MCP
 nativo por Streamable HTTP (sin proxy intermedio), con un compose de ejemplo aislado y una prueba
-de conectividad automatizada (ver [openwebui-integration.md](openwebui-integration.md)). No
-implementa escritura.
+de conectividad automatizada (ver [openwebui-integration.md](openwebui-integration.md)). Sprint 9
+añade un segundo adaptador SQL (`MariaDbAdapter`, dialecto `mysql` de SQLGlot resuelto
+internamente) que reutiliza las tools SQL existentes sin cambios, y el primer adaptador
+documental (`MongoDbAdapter`), con su propia interfaz `DocumentDatabaseAdapter`, validador por
+allowlist de operadores (`app/security/mongo.py`) y 4 tools MCP propias — ver
+[document-security.md](document-security.md). SQL Server e Informix quedan bloqueados por
+soporte ARM64 no confirmado (ver `TASKS.md`). No implementa escritura.
 
 ## Principios
 
@@ -41,7 +46,7 @@ implementa escritura.
 
 ```mermaid
 flowchart LR
-    NetworkClient["Open WebUI u otro cliente MCP"] -->|"Streamable HTTP /mcp"| Tools["25 herramientas FastMCP"]
+    NetworkClient["Open WebUI u otro cliente MCP"] -->|"Streamable HTTP /mcp"| Tools["29 herramientas FastMCP"]
     LocalClient["Cliente MCP local"] -->|"STDIO"| Tools
     Operator["Operador"] -->|"GET /health"| API["FastAPI"]
     Tools --> CS["ConnectionService"]
@@ -54,8 +59,12 @@ flowchart LR
     Tools --> ObjExp["ObjectExplanationService"]
     Tools --> DocIndex["DocumentIndexService"]
     Tools --> DocSearch["DocumentSearchService"]
+    Tools --> MongoValidator["DocumentQueryValidationService"]
+    Tools --> MongoExecutor["DocumentQueryExecutionService"]
     Executor --> Validator
     Executor --> CS
+    MongoExecutor --> MongoValidator
+    MongoExecutor --> CS
     GenExec --> Gen
     GenExec --> Executor
     Report --> GenExec
@@ -77,7 +86,12 @@ flowchart LR
     CS --> Config["Pydantic + connections.yaml"]
     CS --> Factory["AdapterFactory"]
     Factory --> PG["PostgresAdapter"]
+    Factory --> MDB["MariaDbAdapter"]
     PG -->|"sesión y rol readonly"| DB["PostgreSQL / mcp_readonly"]
+    MDB -->|"sesión y rol readonly"| MariaDB["MariaDB / mcp_readonly"]
+    CS --> DocFactory["DocumentAdapterFactory"]
+    DocFactory --> MongoAdapter["MongoDbAdapter"]
+    MongoAdapter -->|"rol read"| Mongo["MongoDB / mcp_readonly"]
     Cat --> CatalogDB["Catálogo / SQLite"]
     Executor --> Audit["AuditService"]
     Gen --> Audit
@@ -85,7 +99,9 @@ flowchart LR
     ObjExp --> Audit
     DocIndex --> Audit
     DocSearch --> Audit
-    Validator --> Policy["Política PostgreSQL / SQLGlot AST"]
+    MongoExecutor --> Audit
+    Validator --> Policy["Política PostgreSQL/MariaDB / SQLGlot AST"]
+    MongoValidator --> MongoPolicy["Allowlist de operadores / MongoOperatorPolicy"]
     Audit --> AuditDB["Auditoría / SQLite"]
     Scheduler["CatalogScheduler"] --> Cat
     DocScheduler["DocumentIndexScheduler"] --> DocIndex
@@ -96,10 +112,14 @@ flowchart LR
 - `app/config`: carga de YAML y normalización de errores.
 - `app/models`: contratos tipados de conexiones, catálogo, metadata MCP, validación, ejecución,
   auditoría, generación LLM, reportes y RAG documental.
-- `app/security`: reglas PostgreSQL aplicadas sobre el árbol sintáctico.
-- `app/services`: casos de uso de conexión, catálogo, validación, ejecución, auditoría, generación
-  asistida por LLM e indexación/búsqueda de documentos.
-- `app/adapters`: contrato SQL, fábrica por registro y adaptación PostgreSQL.
+- `app/security`: reglas PostgreSQL/MariaDB aplicadas sobre el árbol sintáctico de SQLGlot, y
+  allowlist de operadores documentales MongoDB (`MongoOperatorPolicy`).
+- `app/services`: casos de uso de conexión, catálogo, validación, ejecución (SQL y documental),
+  auditoría, generación asistida por LLM e indexación/búsqueda de documentos.
+- `app/adapters`: contrato SQL (`SqlDatabaseAdapter`) con adaptación PostgreSQL/MariaDB, y contrato
+  documental (`DocumentDatabaseAdapter`) con adaptación MongoDB — cada uno con su propia fábrica
+  por registro (`AdapterFactory`/`DocumentAdapterFactory`), sin condicionales por motor dispersos
+  en el resto del código.
 - `app/generation`: contrato de proveedor LLM, fábrica por registro, selección de contexto de
   catálogo, construcción de prompts y parseo de la respuesta del modelo.
 - `app/rag`: contrato de proveedor de embeddings (fábrica por registro, independiente del proveedor
@@ -110,10 +130,10 @@ flowchart LR
 - `app/reporting`: resolución determinística de periodos relativos (sin LLM) y exportadores
   CSV/JSON/XLSX/PDF por registro, orquestados por `ReportingService` sobre
   `GenerationExecutionService`.
-- `app/repositories`: contratos e implementaciones SQLite para catálogo y auditoría.
-- `app/scheduler`: actualización del catálogo en un worker thread sin bloquear ASGI.
-- `app/tools`: 18 herramientas; las respuestas de exploración, generación y reportes usan el
-  contrato MCP `1.0.0`.
+- `app/scheduler`: actualización del catálogo y del índice de documentos en workers thread sin
+  bloquear ASGI.
+- `app/tools`: 29 herramientas; las respuestas de exploración, generación, reportes, RAG y objetos
+  documentales usan el contrato MCP `1.0.0`.
 - `app/container.py`: composition root y dependencias cacheadas por proceso.
 
 El lifespan valida conexiones y secretos, inicializa ambas persistencias SQLite y arranca el
@@ -186,7 +206,7 @@ el entry point `data-platform-mcp-stdio` llama `mcp.run()` con el transporte STD
 Así ambos transportes comparten nombres, schemas de entrada/salida y versión del servidor.
 
 Los envelopes añadidos en Sprint 4 incluyen `contract_version: "1.0.0"`. El servidor se publica
-como `0.8.0`; un cambio de implementación no obliga a romper el contrato. Las pruebas consultan
+como `0.9.0`; un cambio de implementación no obliga a romper el contrato. Las pruebas consultan
 `list_tools`, fijan los 15 nombres y validan los JSON Schemas de entrada/salida. La política de
 compatibilidad y el catálogo completo están en [mcp-contracts.md](mcp-contracts.md) y
 [mcp-tools.md](mcp-tools.md).
@@ -200,10 +220,12 @@ volumen nombrado `catalog-data`; ninguna tabla de auditoría contiene SQL, pará
 texto de documentos. Los vectores de embeddings viven exclusivamente en Qdrant (volumen nombrado
 `qdrant-data`), nunca en SQLite.
 
-MCP, PostgreSQL y Qdrant comparten la red Docker externa `ai-platform`; Open WebUI puede vivir en
-otro Compose y resolver `data-platform-mcp:8000` (validado en Sprint 8 con un compose de ejemplo
-aislado en `examples/openwebui/`, ver [openwebui-integration.md](openwebui-integration.md)). Las
-imágenes fijadas de Python 3.12, PostgreSQL y Qdrant tienen variantes ARM64. Un proceso con SQLite y
+MCP, PostgreSQL, Qdrant, MariaDB y MongoDB comparten la red Docker externa `ai-platform`; Open WebUI
+puede vivir en otro Compose y resolver `data-platform-mcp:8000` (validado en Sprint 8 con un
+compose de ejemplo aislado en `examples/openwebui/`, ver
+[openwebui-integration.md](openwebui-integration.md)). Las imágenes fijadas de Python 3.12,
+PostgreSQL, Qdrant, MariaDB y MongoDB tienen variantes ARM64 — a diferencia de SQL Server e
+Informix, cuyo soporte ARM64 no está confirmado (ver `TASKS.md`). Un proceso con SQLite y
 concurrencia acotada es compatible con una instancia pequeña de Oracle Cloud Free Tier; múltiples
 réplicas requerirían persistencia y coordinación compartidas.
 

@@ -1,4 +1,4 @@
-"""Exercise the public Sprint 4-7 MCP contract through Streamable HTTP."""
+"""Exercise the public Sprint 4-9 MCP contract through Streamable HTTP."""
 
 import argparse
 import asyncio
@@ -12,6 +12,8 @@ from fastmcp import Client
 EXPECTED_TOOLS = {
     "delete_indexed_document",
     "describe_table",
+    "execute_mongo_aggregate",
+    "execute_mongo_find",
     "execute_read_query",
     "explain_database_object",
     "explain_query",
@@ -24,6 +26,7 @@ EXPECTED_TOOLS = {
     "hello_world",
     "list_connections",
     "list_indexed_documents",
+    "list_mongo_collections",
     "list_procedures",
     "list_relationships",
     "list_schemas",
@@ -34,6 +37,7 @@ EXPECTED_TOOLS = {
     "search_documents",
     "search_catalog",
     "test_connection",
+    "validate_mongo_query",
     "validate_sql",
 }
 
@@ -43,6 +47,8 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--url", default="http://127.0.0.1:8000/mcp")
     parser.add_argument("--connection-id", default="postgres-demo")
+    parser.add_argument("--mariadb-connection-id", default="mariadb-demo")
+    parser.add_argument("--mongo-connection-id", default="mongodb-demo")
     return parser.parse_args()
 
 
@@ -61,7 +67,12 @@ def json_value(value: Any) -> Any:
     return value
 
 
-async def smoke(url: str, connection_id: str) -> dict[str, Any]:
+async def smoke(
+    url: str,
+    connection_id: str,
+    mariadb_connection_id: str,
+    mongo_connection_id: str,
+) -> dict[str, Any]:
     """Call discovery, refresh and exploration tools through the network transport."""
     async with Client(url) as client:
         tools = await client.list_tools()
@@ -89,6 +100,22 @@ async def smoke(url: str, connection_id: str) -> dict[str, Any]:
             "list_relationships",
             {"connection_id": connection_id, "table": "ventas"},
         )
+        mariadb_tables = await client.call_tool(
+            "list_tables",
+            {"connection_id": mariadb_connection_id, "schema": "demo"},
+        )
+        mariadb_query = await client.call_tool(
+            "execute_read_query",
+            {"connection_id": mariadb_connection_id, "sql": "SELECT * FROM ventas LIMIT 5"},
+        )
+        mongo_collections = await client.call_tool(
+            "list_mongo_collections",
+            {"connection_id": mongo_connection_id},
+        )
+        mongo_find = await client.call_tool(
+            "execute_mongo_find",
+            {"connection_id": mongo_connection_id, "collection": "ventas", "filter": {}},
+        )
 
         if health.data.contract_version != "1.0.0" or health.data.status != "ok":
             raise RuntimeError("health_check no respeta el contrato MCP 1.0.0")
@@ -103,6 +130,16 @@ async def smoke(url: str, connection_id: str) -> dict[str, Any]:
             raise RuntimeError("describe_table no devolvió public.ventas")
         if not relationships.data.relationships:
             raise RuntimeError("list_relationships no devolvió las FK de public.ventas")
+        if not any(table.name == "ventas" for table in mariadb_tables.data.tables):
+            raise RuntimeError("list_tables no devolvió demo.ventas en MariaDB")
+        if not mariadb_query.data.rows:
+            raise RuntimeError("execute_read_query no devolvió filas de MariaDB")
+        mongo_collections_seen = mongo_collections.data.collections
+        mongo_collection_names = {collection.name for collection in mongo_collections_seen}
+        if "ventas" not in mongo_collection_names:
+            raise RuntimeError("list_mongo_collections no devolvió la colección ventas")
+        if not mongo_find.data.documents:
+            raise RuntimeError("execute_mongo_find no devolvió documentos de MongoDB")
 
     return {
         "transport": "streamable-http",
@@ -115,15 +152,25 @@ async def smoke(url: str, connection_id: str) -> dict[str, Any]:
         "tables": json_value(tables.data),
         "description": json_value(description.data),
         "relationships": json_value(relationships.data),
+        "mariadb_tables": json_value(mariadb_tables.data),
+        "mariadb_query": json_value(mariadb_query.data),
+        "mongo_collections": json_value(mongo_collections.data),
+        "mongo_find": json_value(mongo_find.data),
     }
 
 
 def main() -> None:
     """Run the asynchronous smoke test and print one reviewable JSON document."""
     args = parse_args()
-    print(
-        json.dumps(asyncio.run(smoke(args.url, args.connection_id)), indent=2, ensure_ascii=False)
+    result = asyncio.run(
+        smoke(
+            args.url,
+            args.connection_id,
+            args.mariadb_connection_id,
+            args.mongo_connection_id,
+        )
     )
+    print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
 if __name__ == "__main__":

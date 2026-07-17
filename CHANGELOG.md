@@ -111,6 +111,34 @@ Todos los cambios relevantes de este proyecto se documentan en este archivo. El 
   acoplar el código del proyecto al contenedor de Open WebUI.
 - Script `scripts/smoke_openwebui.py` que verifica de forma automatizada que Open WebUI alcanza
   `data-platform-mcp` por nombre de servicio en `ai-platform`, sin depender de un proveedor LLM real.
+- Segundo adaptador SQL, MariaDB (`MariaDbAdapter`), reutilizando exactamente las mismas tools
+  `validate_sql`/`execute_read_query`/`explain_query`/`list_schemas`/`list_tables`/
+  `describe_table`/`list_procedures`/`list_triggers` ya existentes, sin tools nuevas.
+- Generalización de `QueryValidationService` para despachar dialecto SQLGlot y política de
+  funciones peligrosas por motor (`postgres` → dialecto `postgres`; `mariadb` → dialecto `mysql`),
+  sin cambiar el comportamiento observable de PostgreSQL.
+- `MariaDbSqlPolicy` con denylist de funciones peligrosas MySQL/MariaDB (`LOAD_FILE`, `SLEEP`,
+  `BENCHMARK`, `GET_LOCK`/`RELEASE_LOCK`, etc.).
+- Laboratorio MariaDB (`database/init-mariadb/`) con el mismo esquema/datos demo que PostgreSQL
+  (clientes/productos/ventas), procedimiento y trigger equivalentes, y rol `mcp_readonly` solo
+  `SELECT`/`SHOW VIEW`.
+- Primer adaptador documental, MongoDB (`MongoDbAdapter`), con una interfaz propia
+  `DocumentDatabaseAdapter` que nunca declara ni implementa un método de escritura — la garantía de
+  solo lectura es estructural, no una comprobación en tiempo de ejecución.
+- `MongoOperatorPolicy`, allowlist fail-closed de etapas de pipeline y operadores `$...`; `$out`,
+  `$merge`, `$function`, `$accumulator` y `$where` quedan bloqueados por diseño.
+- `DocumentQueryValidationService` y `DocumentQueryExecutionService`, mismo principio de
+  revalidación completa e independiente que `QueryExecutionService`: ninguna consulta bloqueada
+  llega al adaptador.
+- Herramientas MCP `list_mongo_collections`, `validate_mongo_query`, `execute_mongo_find` y
+  `execute_mongo_aggregate`, para un catálogo total de 29 tools.
+- Laboratorio MongoDB (`database/init-mongo/`) con colecciones demo equivalentes
+  (clientes/productos/ventas con `_id` enteros simples) y usuario con rol `read` únicamente.
+- Documentación de la política documental (`docs/document-security.md`), y actualización de
+  `docs/connections.md`/`docs/query-security.md` con el modelo multi-dialecto.
+- Pruebas de validación documental, adaptador MongoDB, contrato MCP e integración real contra
+  MariaDB y MongoDB, incluida verificación explícita de que las escrituras con las credenciales
+  `mcp_readonly` fallan en el servidor (no solo en el cliente) en ambos motores nuevos.
 
 ### Security
 
@@ -154,6 +182,18 @@ Todos los cambios relevantes de este proyecto se documentan en este archivo. El 
 - Open WebUI se conecta al MCP sin autenticación propia (limitación conocida ya documentada); la
   red `ai-platform` sigue siendo la única frontera de confianza, y el compose de ejemplo no expone
   el MCP públicamente.
+- Rol MariaDB `mcp_readonly` con `SELECT`/`SHOW VIEW` únicamente, sesión `SET SESSION TRANSACTION
+  READ ONLY` y `max_statement_time` acotado; verificado con un intento de escritura real que el
+  servidor rechaza, no solo el cliente.
+- Rol MongoDB `mcp_readonly` con el rol `read` únicamente (nunca `readWrite`/`dbAdmin`), combinado
+  con que `DocumentDatabaseAdapter` nunca declara un método de escritura — doble garantía
+  independiente, verificada con un intento de escritura real que el servidor rechaza.
+- `execute_mongo_aggregate` añade `{"$limit": max_rows}` al pipeline validado antes de ejecutar,
+  como defensa adicional independiente de la validación previa.
+- Auditoría de consultas documentales con hash SHA-256 del filtro/pipeline serializado, nunca su
+  contenido.
+- SQL Server e Informix permanecen sin adaptador ni imagen de laboratorio: SQL Server no publica
+  imagen Docker ARM64 nativa e Informix no tiene soporte ARM64 confirmado para versiones modernas.
 
 ### Fixed
 
@@ -171,3 +211,7 @@ Todos los cambios relevantes de este proyecto se documentan en este archivo. El 
   `.md`/`.txt`/`.sql`/`.json`/`.yaml`.
 - Demostración end-to-end automatizada de HU-802/HU-803 (requiere un proveedor LLM real dentro de
   Open WebUI; queda como runbook manual en `docs/openwebui-integration.md`).
+- SQL Server e Informix (Sprint 9, `BLOCKED`): sin imagen Docker ARM64 nativa confirmada.
+- Explicación LLM de objetos y generación de SQL asistida por LLM para MongoDB (motor documental,
+  fuera del pipeline SQL de Sprint 5/6). MariaDB sí funciona con ambas capacidades sin cambios de
+  código: `GenerationService`/`ObjectExplanationService` ya eran genéricos sobre `connection.type`.

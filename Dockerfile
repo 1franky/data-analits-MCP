@@ -23,6 +23,14 @@ FROM postgres:17.10-bookworm AS postgres-lab
 
 COPY --chmod=0555 database/init/ /docker-entrypoint-initdb.d/
 
+FROM mariadb:11.4 AS mariadb-lab
+
+COPY --chmod=0555 database/init-mariadb/ /docker-entrypoint-initdb.d/
+
+FROM mongo:8.0 AS mongo-lab
+
+COPY --chmod=0555 database/init-mongo/ /docker-entrypoint-initdb.d/
+
 FROM base AS runtime
 
 RUN groupadd --gid 10001 app \

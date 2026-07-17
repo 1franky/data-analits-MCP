@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "data-platform-mcp"
-version = "0.8.0"
+version = "0.9.0"
 description = "MCP extensible para consultar plataformas de datos de forma segura."
 readme = "README.md"
 requires-python = ">=3.12,<3.15"
@@ -19,6 +19,8 @@ dependencies = [
   "openpyxl>=3.1,<4.0",
   "psycopg[binary]>=3.3.4,<3.4.0",
   "pydantic>=2.13.4,<3.0.0",
+  "pymongo>=4.17.0,<5.0.0",
+  "PyMySQL>=1.1.0,<1.2.0",
   "PyYAML>=6.0.3,<7.0.0",
   "qdrant-client>=1.15.0,<2.0.0",
   "sqlglot>=30.12.0,<31.0.0",
@@ -34,6 +36,7 @@ dev = [
   "pytest>=9.1.1,<9.2.0",
   "pytest-asyncio>=1.0,<2.0",
   "ruff>=0.15.20,<0.16.0",
+  "types-PyMySQL>=1.1.0,<1.2.0",
   "types-PyYAML>=6.0.12.20260518,<6.1.0",
 ]
 

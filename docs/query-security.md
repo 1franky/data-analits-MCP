@@ -2,9 +2,14 @@
 
 ## Contrato
 
-La superficie SQL de Sprint 3 soporta PostgreSQL y solo ejecuta una sentencia de lectura. Todas las
-herramientas reciben `connection_id`; el dialecto se obtiene de esa conexión y no puede ser elegido
-libremente por el cliente.
+La superficie SQL soporta PostgreSQL y, desde Sprint 9, MariaDB — ambos ejecutan solo una sentencia
+de lectura bajo las mismas tools. Todas las herramientas reciben `connection_id`; el dialecto
+público (`"postgres"`/`"mariadb"`) se obtiene de esa conexión y no puede ser elegido libremente por
+el cliente. Internamente, `QueryValidationService` despacha ese dialecto público a un dialecto de
+lectura de SQLGlot y a una política de funciones peligrosas por motor (`postgres` → dialecto
+SQLGlot `postgres` + `PostgresSqlPolicy`; `mariadb` → dialecto SQLGlot `mysql` +
+`MariaDbSqlPolicy`, ya que SQLGlot no tiene un dialecto `"mariadb"` literal). El valor público de
+`dialect` que ve el cliente y que se audita nunca cambia por esta traducción interna.
 
 `validate_sql` puede clasificar una escritura y devolver su forma normalizada para revisión. Eso no
 la convierte en ejecutable. `execute_read_query` y `explain_query` vuelven a validar el texto; no
@@ -37,6 +42,15 @@ Razones principales:
 La respuesta agrega `statement_type`, `referenced_objects`, `parameter_names`, razones y warnings.
 Los códigos son el contrato estable; los mensajes humanos pueden mejorar sin romper consumidores.
 
+## Política MariaDB
+
+`MariaDbSqlPolicy` bloquea funciones peligrosas específicas de MySQL/MariaDB: `LOAD_FILE`,
+`SLEEP`, `BENCHMARK`, `GET_LOCK`/`RELEASE_LOCK`/`RELEASE_ALL_LOCKS`, `IS_FREE_LOCK`,
+`IS_USED_LOCK`, `MASTER_POS_WAIT`, `SOURCE_POS_WAIT`, `UUID_SHORT`. Comandos administrativos
+(`LOCK TABLES`, `SET GLOBAL`, `KILL`) quedan cubiertos por `ADMIN_COMMAND_NOT_ALLOWED`, el mismo
+código genérico ya usado para PostgreSQL — SQLGlot los clasifica como comandos, no como
+sentencias `SELECT`.
+
 ## Parámetros
 
 Se usa el formato nombrado de Psycopg:
@@ -64,7 +78,8 @@ reduce uno mayor. Además aplica:
 - timeout de conexión/sentencia/locks acotado por la configuración de la conexión;
 - máximo de bytes serializados;
 - semáforo no bloqueante de consultas y planes por proceso;
-- sesión y rol PostgreSQL readonly;
+- sesión y rol readonly (PostgreSQL: `connection.read_only = True`; MariaDB:
+  `SET SESSION TRANSACTION READ ONLY` + `SET SESSION max_statement_time`);
 - rollback explícito y cierre después de cada operación.
 
 El campo `truncated` es conservador: puede ser verdadero al alcanzar exactamente el límite porque el

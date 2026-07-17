@@ -7,6 +7,8 @@ from pathlib import Path
 
 from pydantic import SecretStr
 
+from app.adapters.document_factory import DocumentAdapterFactory
+from app.adapters.document_registry import create_document_adapter_factory
 from app.adapters.registry import create_adapter_factory
 from app.config import ConnectionsConfigLoader
 from app.exceptions import RagNotConfiguredError
@@ -34,6 +36,8 @@ from app.services import (
     CatalogService,
     ConnectionService,
     DocumentIndexService,
+    DocumentQueryExecutionService,
+    DocumentQueryValidationService,
     DocumentSearchService,
     GenerationExecutionService,
     GenerationService,
@@ -51,12 +55,19 @@ def get_connections_config() -> ConnectionsConfig:
 
 
 @lru_cache(maxsize=1)
+def get_document_adapter_factory() -> DocumentAdapterFactory:
+    """Build the isolated registry of implemented document adapters."""
+    return create_document_adapter_factory()
+
+
+@lru_cache(maxsize=1)
 def get_connection_service() -> ConnectionService:
     """Build and cache the validated connection service for this process."""
     config = get_connections_config()
     service = ConnectionService(
         config=config,
         adapter_factory=create_adapter_factory(),
+        document_adapter_factory=get_document_adapter_factory(),
         environment=os.environ,
     )
     service.validate_startup()
@@ -265,4 +276,21 @@ def get_document_index_scheduler() -> DocumentIndexScheduler:
         interval_seconds=config.refresh_interval_minutes * 60,
         refresh_on_startup=config.refresh_on_startup,
         enabled=config.enabled,
+    )
+
+
+@lru_cache(maxsize=1)
+def get_document_query_validation_service() -> DocumentQueryValidationService:
+    """Build the stateless allowlist-backed MongoDB query validator."""
+    return DocumentQueryValidationService()
+
+
+@lru_cache(maxsize=1)
+def get_document_query_execution_service() -> DocumentQueryExecutionService:
+    """Build the bounded MongoDB find/aggregate execution service."""
+    return DocumentQueryExecutionService(
+        connections=get_connection_service(),
+        validator=get_document_query_validation_service(),
+        audit=get_audit_service(),
+        policy=get_connections_config().query,
     )

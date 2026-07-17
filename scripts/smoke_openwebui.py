@@ -25,7 +25,7 @@ def parse_args() -> argparse.Namespace:
 def check_local_openwebui(url: str) -> None:
     """Confirm Open WebUI itself answers on its published port."""
     try:
-        with urllib.request.urlopen(url, timeout=5) as response:  # noqa: S310
+        with urllib.request.urlopen(url, timeout=5) as response:
             if response.status >= 500:
                 raise RuntimeError(f"Open WebUI respondió {response.status} en {url}")
     except urllib.error.URLError as error:
@@ -39,8 +39,8 @@ def check_mcp_reachable_from_openwebui(container: str, mcp_health_url: str) -> d
         f"r = urllib.request.urlopen('{mcp_health_url}', timeout=5); "
         "sys.stdout.write(r.read().decode())"
     )
-    result = subprocess.run(  # noqa: S603
-        ["docker", "exec", container, "python3", "-c", probe],  # noqa: S607
+    result = subprocess.run(
+        ["docker", "exec", container, "python3", "-c", probe],
         capture_output=True,
         text=True,
         timeout=15,

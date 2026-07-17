@@ -25,6 +25,12 @@ from app.tools.metadata import (
     list_tables,
     list_triggers,
 )
+from app.tools.mongo_query import (
+    execute_mongo_aggregate,
+    execute_mongo_find,
+    list_mongo_collections,
+    validate_mongo_query,
+)
 from app.tools.query import execute_read_query, explain_query, validate_sql
 from app.tools.rag import (
     delete_indexed_document,
@@ -47,6 +53,9 @@ mcp = FastMCP(
         "Sprint 6 añade procedimientos y triggers cacheados de solo lectura. "
         "Sprint 7 añade indexación y búsqueda semántica de documentación funcional (RAG), "
         "complementaria al catálogo técnico, nunca un sustituto de este. "
+        "Sprint 9 añade MariaDB (mismas tools SQL, dialecto mysql internamente) y consultas "
+        "documentales MongoDB de solo lectura (find/agregación); insertOne/updateOne/deleteOne/"
+        "$out/$merge nunca están disponibles. "
         "DML y DDL nunca se ejecutan."
     ),
 )
@@ -75,6 +84,10 @@ mcp.tool(name="search_documents")(search_documents)
 mcp.tool(name="list_indexed_documents")(list_indexed_documents)
 mcp.tool(name="refresh_document_index")(refresh_document_index)
 mcp.tool(name="delete_indexed_document")(delete_indexed_document)
+mcp.tool(name="list_mongo_collections")(list_mongo_collections)
+mcp.tool(name="validate_mongo_query")(validate_mongo_query)
+mcp.tool(name="execute_mongo_find")(execute_mongo_find)
+mcp.tool(name="execute_mongo_aggregate")(execute_mongo_aggregate)
 
 
 def main() -> None:

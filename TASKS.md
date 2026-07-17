@@ -6,8 +6,15 @@ Sprint 8 fue aprobado explícitamente. HU-801 queda `DONE` (validado con compose
 prueba de conectividad automatizada). HU-802 y HU-803 quedan `IN_PROGRESS`: el runbook manual con
 prompts exactos está completo en `docs/openwebui-integration.md`, pero su criterio de aceptación
 exige una demostración end-to-end con un proveedor LLM real dentro de Open WebUI, que este entorno
-no puede ejecutar por sí mismo — pasan a `DONE` cuando el usuario confirme que las ejecutó. No se
-inicia Sprint 9 ni historias posteriores hasta recibir aprobación explícita.
+no puede ejecutar por sí mismo — pasan a `DONE` cuando el usuario confirme que las ejecutó.
+
+Sprint 9 fue aprobado explícitamente y acotado a HU-902 (MariaDB) y HU-904 (MongoDB): ambos
+motores tienen imagen Docker ARM64 nativa confirmada, quedan `DONE` e implementados en la rama
+actual, con su validación reproducible registrada más abajo. HU-901 (SQL Server) y HU-903
+(Informix) quedan `BLOCKED` — SQL Server no publica imagen ARM64 nativa (solo x86_64/emulación
+Rosetta) e Informix no tiene soporte ARM64 confirmado para versiones modernas; no se investigan
+más en esta pasada. No se inicia Sprint 10 ni historias posteriores hasta recibir aprobación
+explícita.
 
 ## Sprint 0 — Descubrimiento, arquitectura y bootstrap
 
@@ -88,10 +95,10 @@ inicia Sprint 9 ni historias posteriores hasta recibir aprobación explícita.
 
 | Historia | Estado | Dependencias | Archivos previstos | Pruebas requeridas | Criterios de aceptación | Bloqueos |
 |---|---|---|---|---|---|---|
-| HU-901 SQL Server | TODO | Contratos de adaptador estables | `app/adapters/sqlserver/` | Suite de contrato e integración | Capacidades declaradas, sin condicionales centrales | Imagen/driver ARM64 por validar |
-| HU-902 MariaDB | TODO | Contratos de adaptador estables | `app/adapters/mariadb/` | Suite de contrato e integración | Dialecto y metadata documentados | Laboratorio por definir |
-| HU-903 Informix | TODO | Contratos de adaptador estables | `app/adapters/informix/` | Suite donde driver sea viable | Fallo aislado si driver no disponible | Riesgo alto de driver ARM64 |
-| HU-904 MongoDB | TODO | Interfaz documental y políticas | `app/adapters/mongodb/` | find/agregación; `$out`/`$merge` bloqueados | Capacidades documentales, sin interfaz SQL forzada | Diseñar validador específico |
+| HU-901 SQL Server | BLOCKED | Contratos de adaptador estables | `app/adapters/sqlserver/` | — | — | Sin imagen Docker ARM64 nativa disponible (solo x86_64/emulación Rosetta); no se investiga más en esta pasada |
+| HU-902 MariaDB | DONE | Contratos de adaptador estables | `app/adapters/mariadb/`, `app/security/mariadb.py`, `database/init-mariadb/` | Suite de contrato e integración | Dialecto y metadata documentados | Ninguno |
+| HU-903 Informix | BLOCKED | Contratos de adaptador estables | `app/adapters/informix/` | — | — | Soporte ARM64 del driver/imagen no confirmado para versiones modernas; no se investiga más en esta pasada |
+| HU-904 MongoDB | DONE | Interfaz documental y políticas | `app/adapters/mongodb/`, `app/adapters/base/document.py`, `app/security/mongo.py`, `database/init-mongo/` | find/agregación; `$out`/`$merge` bloqueados | Capacidades documentales, sin interfaz SQL forzada | Ninguno |
 
 ## Sprint 10 — Hardening y operación
 
@@ -357,3 +364,41 @@ aparezcan en la UI de administración de Open WebUI tras añadir el servidor MCP
 este entorno no cuenta con automatización de navegador, así que esa verificación puntual queda
 también a cargo del usuario siguiendo la guía — tratándose de una acción de UI sin LLM de por
 medio, el riesgo de que falle es bajo dado que la conectividad de red ya está confirmada.
+
+## Evidencia de validación de Sprint 9
+
+Validación ejecutada el 2026-07-17 sobre Docker Desktop ARM64:
+
+```text
+pytest unitario/contratos/STDIO: PASS — 317 passed, 33 integration deselected en 9.22s
+pytest integración (PostgreSQL + MariaDB + MongoDB + Qdrant): PASS — 33 passed, 317 deselected
+  (ejecutado en la red ai-platform con RUN_POSTGRES_INTEGRATION=1, RUN_MARIADB_INTEGRATION=1,
+  RUN_MONGODB_INTEGRATION=1, RUN_QDRANT_INTEGRATION=1)
+suite completa combinada: PASS — 350 passed en 12.39s
+ruff check: PASS — All checks passed (se corrigieron 3 directivas `# noqa` huérfanas preexistentes
+  en scripts/smoke_openwebui.py, sin relación funcional con Sprint 9)
+ruff format --check: PASS — 183 files already formatted
+mypy app tests: PASS — no issues found in 181 source files
+docker compose config --quiet: PASS
+docker build --target test: PASS
+docker compose down -v / up -d --build: PASS — laboratorio recreado desde volumen vacío para
+  aplicar los seeds nuevos (database/init-mariadb/, database/init-mongo/); 5 servicios healthy
+  (data-platform-mcp, postgres-lab, qdrant, mariadb-lab, mongo-lab), versión 0.9.0
+MCP HTTP smoke: PASS — scripts/smoke_mcp.py ampliado a las 29 tools (se detectó y corrigió que el
+  fork de implementación había olvidado añadir las 4 tools de MongoDB a la lista esperada); llamada
+  real contra mariadb-demo (list_tables + execute_read_query sobre demo.ventas, 5 filas) y contra
+  mongodb-demo (list_mongo_collections + execute_mongo_find sobre ventas, 5 documentos)
+cero escritura: PASS — test_mariadb_lab_role_cannot_write y test_mongodb_lab_role_cannot_write
+  confirman contra el laboratorio real que el rol mcp_readonly no puede escribir en ninguno de los
+  dos motores nuevos (el bloqueo ocurre en el servidor de base de datos, no solo en la validación)
+runtime restrictions: PASS — UID app (10001), raíz read-only, cap_drop ALL, no-new-privileges
+runtime platform: PASS — los 5 servicios corren linux/arm64 sobre la red externa ai-platform
+```
+
+Nota: se encontraron y corrigieron dos defectos dejados por los forks de implementación antes de
+cerrar el sprint: (1) `tests/unit/test_mongo_query_tools.py` no mockeaba `get_audit_service`, por lo
+que fallaba al intentar leer `connections.yaml` real; se corrigió replicando el mismo patrón que
+`tests/unit/test_query_tools.py` (construir un `AuditService` real sobre el repositorio SQLite del
+fixture). (2) `scripts/smoke_mcp.py` seguía con la lista de 25 tools de Sprint 8 y nunca ejercitaba
+MariaDB ni MongoDB; se amplió con las 4 tools nuevas y llamadas reales contra ambos laboratorios,
+tal como exigía la verificación del plan aprobado.

@@ -2,17 +2,22 @@
 
 ## Contenido del snapshot
 
-Cada conexión tiene como máximo un snapshot válido con fecha, hash SHA-256, schemas, tablas,
-comentarios de tablas/columnas, tipos, nulabilidad, defaults, claves primarias, índices únicos
-simples/completos, claves foráneas, procedimientos/funciones y triggers. El adaptador consulta
-exclusivamente catálogos internos de PostgreSQL. No se ejecuta `SELECT` sobre tablas de negocio,
-no se invoca el cuerpo de ningún procedimiento o trigger, y no se almacenan filas de negocio.
+Cada conexión SQL (PostgreSQL, MariaDB desde Sprint 9) tiene como máximo un snapshot válido con
+fecha, hash SHA-256, schemas, tablas, comentarios de tablas/columnas, tipos, nulabilidad, defaults,
+claves primarias, índices únicos simples/completos, claves foráneas, procedimientos/funciones y
+triggers. El adaptador consulta exclusivamente catálogos internos de cada motor
+(`pg_catalog`/`information_schema` en PostgreSQL, `information_schema` en MariaDB). No se ejecuta
+`SELECT` sobre tablas de negocio, no se invoca el cuerpo de ningún procedimiento o trigger, y no se
+almacenan filas de negocio. MongoDB no participa de este catálogo: es un motor documental sin
+schema fijo, con sus propias tools (`list_mongo_collections`) — ver
+[document-security.md](document-security.md).
 
 Procedimientos y triggers (Sprint 6) heredan `excluded_schemas` igual que las tablas: un motor sin
 capacidad declarada (`list_procedures`/`list_triggers` en `False`) simplemente no aporta esos
 objetos al snapshot, sin error. Su definición SQL real (DDL vía `pg_get_functiondef`/
-`pg_get_triggerdef`) se cachea junto al resto de metadata y es la fuente que consume
-`explain_database_object` para explicarlos, sin una segunda conexión a PostgreSQL.
+`pg_get_triggerdef` en PostgreSQL, `SHOW CREATE FUNCTION`/`PROCEDURE` en MariaDB) se cachea junto
+al resto de metadata y es la fuente que consume `explain_database_object` para explicarlos, sin una
+segunda conexión a la base.
 
 Los índices únicos permiten inferir la cardinalidad máxima origen→destino de una FK. Coincidencia
 con PK o índice único produce `one-to-one`; sin unicidad declarada produce `many-to-one`. Índices

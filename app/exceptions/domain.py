@@ -225,3 +225,7 @@ class UnsupportedDocumentFormatError(DataPlatformError):
             code="UNSUPPORTED_DOCUMENT_FORMAT",
             message=f"La extensión '{extension}' no está permitida para indexación.",
         )
+
+
+class DocumentQueryRequestError(DataPlatformError):
+    """Raised when a MongoDB query request violates its public contract."""

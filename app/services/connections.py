@@ -4,7 +4,8 @@ from collections.abc import Mapping
 
 from pydantic import SecretStr
 
-from app.adapters.base import SqlDatabaseAdapter
+from app.adapters.base import DocumentDatabaseAdapter, SqlDatabaseAdapter
+from app.adapters.document_factory import DocumentAdapterFactory
 from app.adapters.factory import AdapterFactory
 from app.exceptions import (
     AdapterNotAvailableError,
@@ -29,9 +30,11 @@ class ConnectionService:
         config: ConnectionsConfig,
         adapter_factory: AdapterFactory,
         environment: Mapping[str, str],
+        document_adapter_factory: DocumentAdapterFactory | None = None,
     ) -> None:
         self._connections = {connection.id: connection for connection in config.connections}
         self._adapter_factory = adapter_factory
+        self._document_adapter_factory = document_adapter_factory or DocumentAdapterFactory()
         self._environment = environment
 
     def validate_startup(self) -> None:
@@ -39,9 +42,13 @@ class ConnectionService:
         for connection in self._connections.values():
             if not connection.enabled:
                 continue
-            if not self._adapter_factory.supports(connection.type):
+            secret = self._secret_for(connection)
+            if self._adapter_factory.supports(connection.type):
+                self._adapter_factory.create(connection, secret)
+            elif self._document_adapter_factory.supports(connection.type):
+                self._document_adapter_factory.create(connection, secret)
+            else:
                 raise AdapterNotAvailableError(connection.type.value)
-            self._adapter_factory.create(connection, self._secret_for(connection))
 
     def list_connections(self) -> tuple[ConnectionSummary, ...]:
         """List declarations without resolving or exposing secrets."""
@@ -53,7 +60,10 @@ class ConnectionService:
                 database=connection.database,
                 enabled=connection.enabled,
                 readonly=connection.readonly,
-                capabilities=self._adapter_factory.capabilities_for(connection.type),
+                capabilities=(
+                    self._adapter_factory.capabilities_for(connection.type)
+                    or self._document_adapter_factory.capabilities_for(connection.type)
+                ),
             )
             for connection in sorted(self._connections.values(), key=lambda item: item.id)
         )
@@ -66,9 +76,10 @@ class ConnectionService:
         raise ConnectionNotFoundError(connection_id)
 
     def test_connection(self, connection_id: str) -> ConnectionTestResult:
-        """Test one enabled connection and normalize domain failures."""
+        """Test one enabled connection (SQL or document) and normalize domain failures."""
         try:
-            adapter = self.get_adapter(connection_id)
+            connection = self.get_connection_config(connection_id)
+            adapter = self._resolve_any_adapter(connection)
         except DataPlatformError as error:
             return ConnectionTestResult(
                 connection_id=connection_id,
@@ -80,10 +91,27 @@ class ConnectionService:
         return adapter.test_connection()
 
     def get_adapter(self, connection_id: str) -> SqlDatabaseAdapter:
-        """Resolve a validated connection and create its adapter."""
+        """Resolve a validated connection and create its SQL adapter."""
         connection = self.get_connection_config(connection_id)
         password = self._secret_for(connection)
         return self._adapter_factory.create(connection, password)
+
+    def get_document_adapter(self, connection_id: str) -> DocumentDatabaseAdapter:
+        """Resolve a validated connection and create its document adapter."""
+        connection = self.get_connection_config(connection_id)
+        password = self._secret_for(connection)
+        return self._document_adapter_factory.create(connection, password)
+
+    def _resolve_any_adapter(
+        self,
+        connection: ConnectionConfig,
+    ) -> SqlDatabaseAdapter | DocumentDatabaseAdapter:
+        password = self._secret_for(connection)
+        if self._adapter_factory.supports(connection.type):
+            return self._adapter_factory.create(connection, password)
+        if self._document_adapter_factory.supports(connection.type):
+            return self._document_adapter_factory.create(connection, password)
+        raise AdapterNotAvailableError(connection.type.value)
 
     def get_connection_config(self, connection_id: str) -> ConnectionConfig:
         """Return one enabled internal declaration without resolving its secret."""
