@@ -2,11 +2,13 @@
 
 Data Platform MCP es un servicio independiente del proveedor de LLM para explorar fuentes de datos
 desde clientes compatibles con Model Context Protocol (MCP), incluido Open WebUI. El proyecto se
-construye por sprints y actualmente implementa el **Sprint 7**: RAG documental desacoplado —
-indexación de documentación funcional (diccionarios de datos, reglas de negocio, ejemplos SQL)
-desde un directorio de solo lectura en un vector store (Qdrant), y búsqueda semántica con su propio
-proveedor de embeddings, independiente del proveedor de generación de SQL. El RAG complementa el
-catálogo técnico sin reemplazarlo (ver [docs/rag.md](docs/rag.md)). Además implementa el
+construye por sprints y actualmente implementa el **Sprint 8**: integración con Open WebUI como
+cliente MCP nativo (Streamable HTTP, sin proxy ni bridge intermedio) — ver
+[docs/openwebui-integration.md](docs/openwebui-integration.md) para la guía paso a paso, un compose
+de ejemplo aislado en `examples/openwebui/`, y un script de conectividad automatizada. Además
+implementa el **Sprint 7** (RAG documental desacoplado: indexación de documentación funcional desde
+un directorio de solo lectura en un vector store Qdrant, y búsqueda semántica con su propio
+proveedor de embeddings independiente del de generación de SQL — ver [docs/rag.md](docs/rag.md)), el
 **Sprint 6** (lectura cacheada de procedimientos/funciones y triggers PostgreSQL, y su explicación
 en lenguaje natural vía LLM separando hechos verificables de inferencias) y el **Sprint 5**
 (generación de SQL asistida por LLM sobre el catálogo cacheado, ejecución orquestada bajo
@@ -95,7 +97,9 @@ MCP:        http://data-platform-mcp:8000/mcp
 PostgreSQL: postgres-lab:5432
 ```
 
-Open WebUI puede permanecer en otro proyecto Compose: solo necesita compartir `ai-platform`.
+Open WebUI puede permanecer en otro proyecto Compose: solo necesita compartir `ai-platform`. Ver
+[docs/openwebui-integration.md](docs/openwebui-integration.md) para la guía completa, incluido un
+compose de ejemplo aislado en `examples/openwebui/`.
 
 Para un cliente MCP local, el entry point instalado inicia exactamente el mismo catálogo de tools
 por STDIO:
@@ -248,7 +252,9 @@ servicio directamente a Internet. Consulta [seguridad](docs/security.md).
 
 El plan se mantiene en [TASKS.md](TASKS.md). Sprint 5 (generación de SQL mediante lenguaje natural
 sobre metadata real, aclaraciones ante ambigüedad y reportes XLSX/PDF/CSV/JSON), Sprint 6 (lectura
-de procedimientos/triggers y explicaciones asistidas por LLM) y Sprint 7 (RAG documental sobre
-Qdrant) ya están implementados; la generación LLM y el RAG siguen deshabilitados por defecto. El
-siguiente hito, que no se iniciará sin aprobación, es Sprint 8: integración con Open WebUI. Después
-siguen motores adicionales y hardening.
+de procedimientos/triggers y explicaciones asistidas por LLM), Sprint 7 (RAG documental sobre
+Qdrant) y Sprint 8 (integración con Open WebUI como cliente MCP nativo) ya están implementados; la
+generación LLM y el RAG siguen deshabilitados por defecto. HU-802 y HU-803 de Sprint 8 quedan
+`IN_PROGRESS` en `TASKS.md` hasta que se confirme su ejecución con un proveedor LLM real dentro de
+Open WebUI (ver [docs/openwebui-integration.md](docs/openwebui-integration.md)). El siguiente hito,
+que no se iniciará sin aprobación, es Sprint 9: adaptadores adicionales. Después sigue hardening.

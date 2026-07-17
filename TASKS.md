@@ -2,9 +2,12 @@
 
 Estados permitidos: `TODO`, `IN_PROGRESS`, `BLOCKED`, `DONE`.
 
-Sprint 7 fue aprobado explícitamente, sus tres historias (HU-701 a HU-703) quedan implementadas en
-la rama actual y su validación reproducible se registró más abajo. No se inicia Sprint 8 ni
-historias posteriores hasta recibir aprobación explícita.
+Sprint 8 fue aprobado explícitamente. HU-801 queda `DONE` (validado con compose de ejemplo y
+prueba de conectividad automatizada). HU-802 y HU-803 quedan `IN_PROGRESS`: el runbook manual con
+prompts exactos está completo en `docs/openwebui-integration.md`, pero su criterio de aceptación
+exige una demostración end-to-end con un proveedor LLM real dentro de Open WebUI, que este entorno
+no puede ejecutar por sí mismo — pasan a `DONE` cuando el usuario confirme que las ejecutó. No se
+inicia Sprint 9 ni historias posteriores hasta recibir aprobación explícita.
 
 ## Sprint 0 — Descubrimiento, arquitectura y bootstrap
 
@@ -77,9 +80,9 @@ historias posteriores hasta recibir aprobación explícita.
 
 | Historia | Estado | Dependencias | Archivos previstos | Pruebas requeridas | Criterios de aceptación | Bloqueos |
 |---|---|---|---|---|---|---|
-| HU-801 Conectar Open WebUI | TODO | Servidor MCP completo, `ai-platform` | Guía de integración y smoke test | DNS/red y sesión MCP real | Acceso por nombre sin exposición pública | Validar versión/configuración Open WebUI |
-| HU-802 Consultar PostgreSQL desde chat | TODO | HU-801, Sprints 1–5 | Pruebas E2E | JOIN completo chat→MCP→DB | SQL válido, validado, ejecutado y explicado | Requiere entorno Open WebUI |
-| HU-803 Generar DML sin ejecutarlo | TODO | HU-801, HU-303 | E2E de seguridad | Datos antes/después sin cambios | DELETE visible, bloqueado y auditado | Requiere entorno completo |
+| HU-801 Conectar Open WebUI | DONE | Servidor MCP completo, `ai-platform` | `examples/openwebui/`, `docs/openwebui-integration.md`, `scripts/smoke_openwebui.py` | DNS/red y prueba de conectividad automatizada | Acceso por nombre sin exposición pública | Ninguno |
+| HU-802 Consultar PostgreSQL desde chat | IN_PROGRESS | HU-801, Sprints 1–5 | Runbook manual en `docs/openwebui-integration.md` | JOIN completo chat→MCP→DB | SQL válido, validado, ejecutado y explicado | Requiere que el usuario ejecute el runbook con un proveedor LLM real y confirme el resultado |
+| HU-803 Generar DML sin ejecutarlo | IN_PROGRESS | HU-801, HU-303 | Runbook manual en `docs/openwebui-integration.md` | Datos antes/después sin cambios | DELETE visible, bloqueado y auditado | Requiere que el usuario ejecute el runbook con un proveedor LLM real y confirme el resultado |
 
 ## Sprint 9 — Adaptadores adicionales
 
@@ -319,3 +322,38 @@ FakeVectorStoreRepository, igual que generate_sql/explain_database_object en Spr
 persistencia de vectores (Qdrant real) sí se valida con integración real, a diferencia del
 proveedor de embeddings.
 ```
+
+## Evidencia de validación de Sprint 8
+
+Validación ejecutada el 2026-07-17 sobre Docker Desktop ARM64:
+
+```text
+pytest unitario/contratos/STDIO: PASS — 256 passed, 17 integration deselected in 7.87s (sin
+  cambios en app/; corrido como red de seguridad, no como parte del alcance de este sprint)
+ruff check / ruff format --check / mypy app tests: PASS — sin cambios en app/
+docker compose config --quiet (principal): PASS
+docker compose -f examples/openwebui/compose.yaml config --quiet: PASS
+docker compose up (principal): PASS — data-platform-mcp, postgres-lab y qdrant healthy, versión
+  0.8.0
+docker compose -f examples/openwebui/compose.yaml up: PASS — open-webui healthy
+  (ghcr.io/open-webui/open-webui:v0.10.1); el healthcheck inicial con "/dev/tcp" vía sh falló
+  porque la imagen no usa bash como /bin/sh — se corrigió a curl -f http://127.0.0.1:8080/health,
+  confirmado disponible dentro de la imagen
+scripts/smoke_openwebui.py: PASS — Open WebUI alcanza data-platform-mcp:8000/health por nombre de
+  servicio dentro de ai-platform; respuesta real: {"status": "ok", "service": "data-platform-mcp",
+  "version": "0.8.0"}
+exposición de puertos: PASS — Open WebUI publicado solo en 127.0.0.1:3000 por defecto, mismo
+  criterio que el resto del stack; MCP sigue sin exponerse públicamente
+runtime: PASS — ambos stacks se detuvieron limpiamente al terminar (docker compose down)
+```
+
+Nota: HU-801 queda validada de extremo a extremo con esta evidencia automatizada. HU-802 y HU-803
+NO se ejecutaron en esta sesión: requieren un proveedor LLM real configurado dentro de Open WebUI
+(decisión explícita del usuario, ver plan de Sprint 8) y no se generó ni compartió ninguna
+credencial real en este entorno. `docs/openwebui-integration.md` contiene el runbook exacto
+(prompts y resultado esperado) para que el usuario los ejecute y confirme; quedan `IN_PROGRESS` en
+la tabla de Sprint 8 hasta esa confirmación. Tampoco se verificó por este medio que las 25 tools
+aparezcan en la UI de administración de Open WebUI tras añadir el servidor MCP (paso 3 de la guía):
+este entorno no cuenta con automatización de navegador, así que esa verificación puntual queda
+también a cargo del usuario siguiendo la guía — tratándose de una acción de UI sin LLM de por
+medio, el riesgo de que falle es bajo dado que la conectividad de red ya está confirmada.

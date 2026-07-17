@@ -18,8 +18,11 @@ un subsistema RAG desacoplado (`search_documents`, `list_indexed_documents`,
 `refresh_document_index`, `delete_indexed_document`) que indexa documentación funcional desde un
 directorio montado de solo lectura en un vector store (Qdrant), con su propio proveedor de
 embeddings opcional e independiente del de generación de SQL. El RAG no reemplaza el catálogo:
-complementa la estructura técnica real con contexto funcional (ver [rag.md](rag.md)). No implementa
-escritura.
+complementa la estructura técnica real con contexto funcional (ver [rag.md](rag.md)). Sprint 8 no
+añade tools ni código nuevo: documenta y valida la integración con Open WebUI como cliente MCP
+nativo por Streamable HTTP (sin proxy intermedio), con un compose de ejemplo aislado y una prueba
+de conectividad automatizada (ver [openwebui-integration.md](openwebui-integration.md)). No
+implementa escritura.
 
 ## Principios
 
@@ -198,10 +201,11 @@ texto de documentos. Los vectores de embeddings viven exclusivamente en Qdrant (
 `qdrant-data`), nunca en SQLite.
 
 MCP, PostgreSQL y Qdrant comparten la red Docker externa `ai-platform`; Open WebUI puede vivir en
-otro Compose y resolver `data-platform-mcp:8000`. Las imágenes fijadas de Python 3.12, PostgreSQL y
-Qdrant tienen variantes ARM64. Un proceso con SQLite y concurrencia acotada es compatible con una
-instancia pequeña de Oracle Cloud Free Tier; múltiples réplicas requerirían persistencia y
-coordinación compartidas.
+otro Compose y resolver `data-platform-mcp:8000` (validado en Sprint 8 con un compose de ejemplo
+aislado en `examples/openwebui/`, ver [openwebui-integration.md](openwebui-integration.md)). Las
+imágenes fijadas de Python 3.12, PostgreSQL y Qdrant tienen variantes ARM64. Un proceso con SQLite y
+concurrencia acotada es compatible con una instancia pequeña de Oracle Cloud Free Tier; múltiples
+réplicas requerirían persistencia y coordinación compartidas.
 
 ## Riesgos y límites
 
