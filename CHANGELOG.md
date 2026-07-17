@@ -104,6 +104,13 @@ Todos los cambios relevantes de este proyecto se documentan en este archivo. El 
 - Documentación de RAG documental (`docs/rag.md`), incluido el patrón de uso combinado con el
   catálogo técnico (HU-703).
 - Documentos de ejemplo en `documents/` que ejercitan la convención de organización por carpetas.
+- Guía de integración con Open WebUI (`docs/openwebui-integration.md`) como cliente MCP nativo por
+  Streamable HTTP, sin proxy ni bridge intermedio, incluyendo ejemplos de prompts para consultar
+  PostgreSQL desde el chat y para generar DML sin ejecutarlo.
+- Compose de ejemplo aislado (`examples/openwebui/`) para validar la integración localmente, sin
+  acoplar el código del proyecto al contenedor de Open WebUI.
+- Script `scripts/smoke_openwebui.py` que verifica de forma automatizada que Open WebUI alcanza
+  `data-platform-mcp` por nombre de servicio en `ai-platform`, sin depender de un proveedor LLM real.
 
 ### Security
 
@@ -144,6 +151,9 @@ Todos los cambios relevantes de este proyecto se documentan en este archivo. El 
   fragmentos recuperados.
 - Si `rag.enabled=true` y Qdrant no responde al arrancar, el proceso falla el arranque completo
   (mismo criterio fail-fast que la validación de conexiones PostgreSQL).
+- Open WebUI se conecta al MCP sin autenticación propia (limitación conocida ya documentada); la
+  red `ai-platform` sigue siendo la única frontera de confianza, y el compose de ejemplo no expone
+  el MCP públicamente.
 
 ### Fixed
 
@@ -157,5 +167,7 @@ Todos los cambios relevantes de este proyecto se documentan en este archivo. El 
 - Vistas y vistas materializadas como objetos explorables o explicables.
 - Ejecución de escritura de cualquier tipo.
 - Autenticación, consulta/retención administrativa de auditoría y métricas operativas.
-- Integración real con Open WebUI (Sprint 8), embeddings locales, formatos de documento adicionales
-  (PDF y otros) más allá de `.md`/`.txt`/`.sql`/`.json`/`.yaml`.
+- Embeddings locales, formatos de documento adicionales (PDF y otros) más allá de
+  `.md`/`.txt`/`.sql`/`.json`/`.yaml`.
+- Demostración end-to-end automatizada de HU-802/HU-803 (requiere un proveedor LLM real dentro de
+  Open WebUI; queda como runbook manual en `docs/openwebui-integration.md`).
