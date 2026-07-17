@@ -4,7 +4,7 @@
 
 Data Platform MCP distingue dos versiones:
 
-- servidor `0.7.0`: versión de la aplicación, imagen y servidor FastMCP;
+- servidor `0.8.0`: versión de la aplicación, imagen y servidor FastMCP;
 - contrato `1.0.0`: versión semántica de los envelopes MCP introducidos en Sprint 4.
 
 `contract_version` aparece en la raíz de `health_check`, `get_connection_capabilities`,
@@ -60,10 +60,17 @@ si no existe, el error explica que debe llamarse `refresh_schema_cache`.
 | `list_triggers` | `connection_id`, `schema?`, `table?` | `contract_version`, `connection_id`, filtros, `triggers`, `cache_status` |
 | `explain_database_object` | `connection_id`, `schema`, `object_type`, `name`, `table?` | `contract_version`, `connection_id`, `outcome`, `purpose`, `facts`, `inferences`, `referenced_tables`, `risks` |
 
+| `search_documents` | `query`, `connection_id?`, `domain?`, `max_results?` | `contract_version`, `query`, filtros, `matches`, `connections_in_results`, `mixed_connections_warning` |
+| `list_indexed_documents` | `connection_id?`, `domain?` | `contract_version`, `documents`, `total` |
+| `refresh_document_index` | `source?` | `contract_version`, `started_at`, `completed_at`, `entries`, conteos agregados |
+| `delete_indexed_document` | `document_id` | `contract_version`, `document_id`, `deleted` |
+
 `list_procedures` y `list_triggers` leen el mismo snapshot cacheado que el resto de tools de
 exploración (Sprint 2), sin conectarse a PostgreSQL durante la llamada. `explain_database_object`
 depende de que `generation.enabled` esté configurado (Sprint 5); sin proveedor LLM configurado
-devuelve un error de dominio antes de intentar cualquier llamada externa.
+devuelve un error de dominio antes de intentar cualquier llamada externa. Las 4 tools RAG (Sprint 7)
+dependen de que `rag.enabled` esté configurado con un proveedor de embeddings propio, independiente
+de `generation.provider`; ver [rag.md](rag.md).
 
 FastMCP genera `inputSchema` y `outputSchema` desde las anotaciones Pydantic. Los tests consultan el
 catálogo a través de un cliente MCP, no duplican un schema escrito manualmente.

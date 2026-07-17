@@ -26,6 +26,12 @@ from app.tools.metadata import (
     list_triggers,
 )
 from app.tools.query import execute_read_query, explain_query, validate_sql
+from app.tools.rag import (
+    delete_indexed_document,
+    list_indexed_documents,
+    refresh_document_index,
+    search_documents,
+)
 from app.tools.reporting import generate_report
 
 mcp = FastMCP(
@@ -39,6 +45,8 @@ mcp = FastMCP(
         "por LLM sobre el catálogo real, siempre revalidada antes de ejecutar. "
         "Añade también generación de reportes XLSX/PDF/CSV/JSON entregados en línea. "
         "Sprint 6 añade procedimientos y triggers cacheados de solo lectura. "
+        "Sprint 7 añade indexación y búsqueda semántica de documentación funcional (RAG), "
+        "complementaria al catálogo técnico, nunca un sustituto de este. "
         "DML y DDL nunca se ejecutan."
     ),
 )
@@ -63,6 +71,10 @@ mcp.tool(name="generate_report")(generate_report)
 mcp.tool(name="list_procedures")(list_procedures)
 mcp.tool(name="list_triggers")(list_triggers)
 mcp.tool(name="explain_database_object")(explain_database_object)
+mcp.tool(name="search_documents")(search_documents)
+mcp.tool(name="list_indexed_documents")(list_indexed_documents)
+mcp.tool(name="refresh_document_index")(refresh_document_index)
+mcp.tool(name="delete_indexed_document")(delete_indexed_document)
 
 
 def main() -> None:

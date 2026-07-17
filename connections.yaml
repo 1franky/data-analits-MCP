@@ -56,3 +56,27 @@ reporting:
   max_inline_bytes: 5000000
   on_size_exceeded: truncate
   allowed_formats: [csv, json, xlsx, pdf]
+
+rag:
+  enabled: false
+  documents_path: /app/documents
+  allowed_extensions: [".md", ".txt", ".sql", ".json", ".yaml", ".yml"]
+  chunk_size: 1000
+  chunk_overlap: 150
+  max_document_bytes: 5000000
+  refresh_interval_minutes: 60
+  refresh_on_startup: true
+  max_search_results: 20
+  # embedding_provider:
+  #   type: openai_compatible
+  #   base_url: http://llm-gateway:8080/v1
+  #   api_key_env: EMBEDDING_API_KEY
+  #   model: text-embedding-3-small
+  #   dimensions: 1536
+  #   timeout_seconds: 30
+  #   batch_size: 64
+  vector_store:
+    url: http://qdrant:6333
+    collection_name: documents
+    timeout_seconds: 10
+    # api_key_env: QDRANT_API_KEY

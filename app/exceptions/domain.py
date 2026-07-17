@@ -173,3 +173,55 @@ class ReportTooLargeError(DataPlatformError):
             code="REPORT_TOO_LARGE",
             message="El reporte excede el tamaño máximo permitido, incluso truncado.",
         )
+
+
+class RagNotConfiguredError(DataPlatformError):
+    """Raised when RAG is requested without an enabled embedding provider."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code="RAG_NOT_CONFIGURED",
+            message="El RAG documental no está configurado o habilitado.",
+        )
+
+
+class RagRequestError(DataPlatformError):
+    """Raised when a RAG request violates its public contract."""
+
+
+class EmbeddingProviderNotAvailableError(DataPlatformError):
+    """Raised when no embedding provider is registered for the configured type."""
+
+    def __init__(self, provider_type: str) -> None:
+        super().__init__(
+            code="EMBEDDING_PROVIDER_NOT_AVAILABLE",
+            message=f"No existe un proveedor de embeddings disponible para '{provider_type}'.",
+        )
+
+
+class EmbeddingProviderError(DataPlatformError):
+    """Raised on embedding provider timeouts, transport errors or invalid responses."""
+
+
+class VectorStoreError(DataPlatformError):
+    """Raised on vector store connectivity, collection or dimension errors."""
+
+
+class DocumentNotFoundError(DataPlatformError):
+    """Raised when a requested indexed document does not exist."""
+
+    def __init__(self, document_id: str) -> None:
+        super().__init__(
+            code="DOCUMENT_NOT_FOUND",
+            message=f"El documento '{document_id}' no existe en el índice.",
+        )
+
+
+class UnsupportedDocumentFormatError(DataPlatformError):
+    """Raised when a document extension is outside the configured allowlist."""
+
+    def __init__(self, extension: str) -> None:
+        super().__init__(
+            code="UNSUPPORTED_DOCUMENT_FORMAT",
+            message=f"La extensión '{extension}' no está permitida para indexación.",
+        )

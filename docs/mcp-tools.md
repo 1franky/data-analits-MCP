@@ -1,8 +1,8 @@
 # Herramientas MCP disponibles
 
-El catálogo contiene 21 tools y es idéntico por Streamable HTTP en `/mcp` y por STDIO mediante
+El catálogo contiene 25 tools y es idéntico por Streamable HTTP en `/mcp` y por STDIO mediante
 `data-platform-mcp-stdio`. Los modelos se serializan como datos estructurados. Los envelopes
-añadidos en Sprint 4, Sprint 5 y Sprint 6 incluyen `contract_version: "1.0.0"`; consulta la
+añadidos en Sprint 4, Sprint 5, Sprint 6 y Sprint 7 incluyen `contract_version: "1.0.0"`; consulta la
 [política de compatibilidad](mcp-contracts.md). No existe ninguna herramienta que ejecute
 escrituras ni que invoque el cuerpo de un procedimiento o trigger.
 
@@ -28,7 +28,7 @@ Verifica el proceso MCP sin depender de PostgreSQL ni del catálogo.
   "contract_version": "1.0.0",
   "status": "ok",
   "service": "data-platform-mcp",
-  "server_version": "0.7.0"
+  "server_version": "0.8.0"
 }
 ```
 
@@ -363,3 +363,60 @@ real, separando explícitamente hechos verificables de inferencias del modelo.
   de Sprint 5); si no, devuelve `GENERATION_NOT_CONFIGURED`.
 - Registra un evento de auditoría con hash de la definición, nunca su texto ni la explicación
   generada.
+
+## `search_documents`
+
+Busca semánticamente en la documentación indexada (RAG, Sprint 7) y devuelve fragmentos con score
+y origen.
+
+- Parámetros: `query`, `connection_id` opcional, `domain` opcional y `max_results` opcional (1 a
+  100).
+- Respuesta: `contract_version`, `query`, `connection_id`, `domain`, `matches`,
+  `connections_in_results`, `mixed_connections_warning` y `message`.
+- Cada elemento de `matches` incluye `document_id`, `chunk_id`, `text`, `score` y `metadata`
+  (título, fuente, `connection_id`/`domain`/`document_type`/`version`, fecha de indexación).
+- Los documentos sin `connection_id`/`domain` (globales) se incluyen siempre, sin importar el
+  filtro pedido.
+- Si no se pasa `connection_id` y el resultado mezcla varias conexiones, `mixed_connections_warning`
+  es `true` — nunca mezcla en silencio.
+- Requiere `rag.enabled: true` y un proveedor de embeddings configurado; si no, devuelve
+  `RAG_NOT_CONFIGURED`.
+- Registra un evento de auditoría con hash de la pregunta, nunca su texto ni los fragmentos
+  devueltos.
+- Ver [rag.md](rag.md) para el patrón de uso combinado con `search_catalog` (HU-703).
+
+## `list_indexed_documents`
+
+Lista la metadata de los documentos actualmente indexados, sin su contenido.
+
+- Parámetros opcionales: `connection_id` y `domain`.
+- Respuesta: `contract_version`, `documents` y `total`.
+- Cada elemento incluye la metadata del documento (`document_id`, `title`, `source`,
+  `connection_id`, `domain`, `document_type`, `version`, `indexed_at`), `content_hash`,
+  `chunk_count`, `embedding_model` y `embedding_dimensions`.
+- No se conecta a Qdrant ni relee el directorio de documentos; lee el estado ya indexado en SQLite.
+
+## `refresh_document_index`
+
+Reindexa el directorio de documentos completo, o un único archivo si se especifica `source`.
+
+- Parámetro opcional: `source` (ruta relativa a `rag.documents_path`).
+- Respuesta: `contract_version`, `started_at`, `completed_at`, `entries`, `indexed_count`,
+  `unchanged_count`, `removed_count`, `failed_count` y `message`.
+- Cada elemento de `entries` incluye `source`, `document_id`, `outcome`
+  (`indexed`/`unchanged`/`removed`/`failed`), `chunk_count`, `error_code` y `message`.
+- Un documento cuyo contenido no cambió se marca `unchanged` y **no recalcula embeddings**.
+- Un documento nuevo o modificado reemplaza por completo sus vectores anteriores en el vector
+  store — nunca deja fragmentos huérfanos de una versión previa más larga.
+- `removed` solo ocurre en un barrido completo (`source` ausente), para documentos que ya no
+  existen en disco.
+- Requiere `rag.enabled: true`; si no, devuelve `RAG_NOT_CONFIGURED`.
+
+## `delete_indexed_document`
+
+Elimina un documento del índice (metadata SQLite y vectores en Qdrant).
+
+- Parámetro requerido: `document_id`.
+- Respuesta: `contract_version`, `document_id`, `deleted`, `error_code` y `message`.
+- No es una exclusión permanente: si el archivo fuente sigue en el volumen de documentos, el
+  próximo `refresh_document_index` (manual o periódico) lo reindexa de nuevo.

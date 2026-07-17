@@ -68,4 +68,4 @@ async def test_mcp_health_tool_is_versioned() -> None:
 
     assert result.data.contract_version == "1.0.0"
     assert result.data.status == "ok"
-    assert result.data.server_version == "0.7.0"
+    assert result.data.server_version == "0.8.0"

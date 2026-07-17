@@ -2,19 +2,24 @@
 
 Data Platform MCP es un servicio independiente del proveedor de LLM para explorar fuentes de datos
 desde clientes compatibles con Model Context Protocol (MCP), incluido Open WebUI. El proyecto se
-construye por sprints y actualmente implementa el **Sprint 6**: lectura cacheada de procedimientos/
-funciones y triggers PostgreSQL, y su explicación en lenguaje natural vía LLM separando hechos
-verificables de inferencias, además del **Sprint 5** (generación de SQL asistida por LLM sobre el
-catálogo cacheado, ejecución orquestada bajo revalidación completa, aclaraciones ante ambigüedad y
-reportes XLSX/PDF/CSV/JSON desde lenguaje natural, todo opcional y deshabilitado por defecto), y la
-exploración MCP completa y las capacidades seguras de conexión, catálogo y SQL de los sprints
-anteriores.
+construye por sprints y actualmente implementa el **Sprint 7**: RAG documental desacoplado —
+indexación de documentación funcional (diccionarios de datos, reglas de negocio, ejemplos SQL)
+desde un directorio de solo lectura en un vector store (Qdrant), y búsqueda semántica con su propio
+proveedor de embeddings, independiente del proveedor de generación de SQL. El RAG complementa el
+catálogo técnico sin reemplazarlo (ver [docs/rag.md](docs/rag.md)). Además implementa el
+**Sprint 6** (lectura cacheada de procedimientos/funciones y triggers PostgreSQL, y su explicación
+en lenguaje natural vía LLM separando hechos verificables de inferencias) y el **Sprint 5**
+(generación de SQL asistida por LLM sobre el catálogo cacheado, ejecución orquestada bajo
+revalidación completa, aclaraciones ante ambigüedad y reportes XLSX/PDF/CSV/JSON desde lenguaje
+natural), todo opcional y deshabilitado por defecto, además de la exploración MCP completa y las
+capacidades seguras de conexión, catálogo y SQL de los sprints anteriores.
 
-No existe todavía RAG documental ni ejecución de escritura. Ningún procedimiento ni trigger se
-ejecuta jamás: solo se leen sus definiciones desde catálogos internos de PostgreSQL. El catálogo
-nunca almacena filas de negocio y la auditoría guarda metadatos de seguridad — nunca el SQL, la
-pregunta en lenguaje natural, los parámetros, los valores devueltos, las definiciones de objetos ni
-los archivos de reporte generados.
+No existe todavía ejecución de escritura. Ningún procedimiento ni trigger se ejecuta jamás: solo se
+leen sus definiciones desde catálogos internos de PostgreSQL. El catálogo nunca almacena filas de
+negocio, el RAG nunca almacena contenido de documentos ni preguntas de búsqueda en texto plano, y la
+auditoría guarda metadatos de seguridad — nunca el SQL, la pregunta en lenguaje natural, los
+parámetros, los valores devueltos, las definiciones de objetos, el contenido de documentos ni los
+archivos de reporte generados.
 
 ## Arquitectura actual
 
@@ -78,7 +83,7 @@ Respuesta esperada:
 {
   "status": "ok",
   "service": "data-platform-mcp",
-  "version": "0.7.0"
+  "version": "0.8.0"
 }
 ```
 
@@ -165,7 +170,7 @@ Variables Compose incluidas en `.env.example`:
 | `MCP_BIND_ADDRESS` | `127.0.0.1` | Interfaz local del MCP/API. |
 | `MCP_PORT` | `8000` | Puerto local del MCP/API. |
 | `LOG_LEVEL` | `info` | Nivel de log de Uvicorn. |
-| `IMAGE_TAG` | `0.7.0` | Etiqueta local de la imagen. |
+| `IMAGE_TAG` | `0.8.0` | Etiqueta local de la imagen. |
 | `CATALOG_DB_PATH` | `/app/data/catalog.db` | SQLite persistente de metadata técnica. |
 | `AUDIT_DB_PATH` | `/app/data/audit.db` | SQLite persistente de eventos SQL sin contenido sensible. |
 | `POSTGRES_IMAGE_TAG` | `17.10` | Etiqueta local del laboratorio PostgreSQL. |
@@ -242,7 +247,8 @@ servicio directamente a Internet. Consulta [seguridad](docs/security.md).
 ## Roadmap
 
 El plan se mantiene en [TASKS.md](TASKS.md). Sprint 5 (generación de SQL mediante lenguaje natural
-sobre metadata real, aclaraciones ante ambigüedad y reportes XLSX/PDF/CSV/JSON) y Sprint 6 (lectura
-de procedimientos/triggers y explicaciones asistidas por LLM) ya están implementados; la generación
-LLM sigue deshabilitada por defecto. El siguiente hito, que no se iniciará sin aprobación, es
-Sprint 7: RAG documental. Después siguen Open WebUI, motores adicionales y hardening.
+sobre metadata real, aclaraciones ante ambigüedad y reportes XLSX/PDF/CSV/JSON), Sprint 6 (lectura
+de procedimientos/triggers y explicaciones asistidas por LLM) y Sprint 7 (RAG documental sobre
+Qdrant) ya están implementados; la generación LLM y el RAG siguen deshabilitados por defecto. El
+siguiente hito, que no se iniciará sin aprobación, es Sprint 8: integración con Open WebUI. Después
+siguen motores adicionales y hardening.

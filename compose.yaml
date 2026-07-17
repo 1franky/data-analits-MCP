@@ -1,6 +1,6 @@
 services:
   data-platform-mcp:
-    image: data-platform-mcp:${IMAGE_TAG:-0.7.0}
+    image: data-platform-mcp:${IMAGE_TAG:-0.8.0}
     build:
       context: .
       dockerfile: Dockerfile
@@ -20,10 +20,13 @@ services:
       CONNECTIONS_FILE: /app/connections.yaml
       CATALOG_DB_PATH: ${CATALOG_DB_PATH:-/app/data/catalog.db}
       AUDIT_DB_PATH: ${AUDIT_DB_PATH:-/app/data/audit.db}
+      DOCUMENTS_DB_PATH: ${DOCUMENTS_DB_PATH:-/app/data/documents.db}
       POSTGRES_DEMO_PASSWORD: ${POSTGRES_DEMO_PASSWORD:?Copy .env.example to .env and set POSTGRES_DEMO_PASSWORD}
       LLM_API_KEY: ${LLM_API_KEY:-}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
     volumes:
       - ./connections.yaml:/app/connections.yaml:ro
+      - ./documents:/app/documents:ro
       - catalog-data:/app/data
     ports:
       - "${MCP_BIND_ADDRESS:-127.0.0.1}:${MCP_PORT:-8000}:8000"
@@ -51,6 +54,8 @@ services:
       retries: 3
     depends_on:
       postgres-lab:
+        condition: service_healthy
+      qdrant:
         condition: service_healthy
     networks:
       - ai-platform
@@ -82,6 +87,24 @@ services:
     networks:
       - ai-platform
 
+  qdrant:
+    image: qdrant/qdrant:${QDRANT_IMAGE_TAG:-v1.17.1}
+    restart: unless-stopped
+    volumes:
+      - qdrant-data:/qdrant/storage
+    healthcheck:
+      test:
+        - CMD
+        - bash
+        - -c
+        - "exec 3<>/dev/tcp/127.0.0.1/6333"
+      interval: 15s
+      timeout: 5s
+      start_period: 15s
+      retries: 5
+    networks:
+      - ai-platform
+
 networks:
   ai-platform:
     name: ${AI_PLATFORM_NETWORK:-ai-platform}
@@ -90,3 +113,4 @@ networks:
 volumes:
   catalog-data:
   postgres-data:
+  qdrant-data:

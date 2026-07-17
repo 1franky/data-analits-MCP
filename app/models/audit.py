@@ -23,6 +23,8 @@ class AuditOperation(StrEnum):
     GENERATE = "generate"
     REPORT = "report"
     EXPLAIN_OBJECT = "explain_object"
+    INDEX_DOCUMENT = "index_document"
+    SEARCH_DOCUMENTS = "search_documents"
 
 
 class AuditStatus(StrEnum):

@@ -13,8 +13,13 @@ camino de ejecución que evite la validación existente. Sprint 6 añade lectura
 procedimientos/funciones y triggers PostgreSQL (`list_procedures`, `list_triggers`) mediante
 catálogos internos de solo lectura, y explicación en lenguaje natural de esos objetos vía LLM
 (`explain_database_object`), reutilizando el mismo proveedor opcional de Sprint 5 y separando
-siempre hechos verificables de la definición real frente a inferencias del modelo. No implementa
-RAG ni escritura.
+siempre hechos verificables de la definición real frente a inferencias del modelo. Sprint 7 añade
+un subsistema RAG desacoplado (`search_documents`, `list_indexed_documents`,
+`refresh_document_index`, `delete_indexed_document`) que indexa documentación funcional desde un
+directorio montado de solo lectura en un vector store (Qdrant), con su propio proveedor de
+embeddings opcional e independiente del de generación de SQL. El RAG no reemplaza el catálogo:
+complementa la estructura técnica real con contexto funcional (ver [rag.md](rag.md)). No implementa
+escritura.
 
 ## Principios
 
@@ -33,7 +38,7 @@ RAG ni escritura.
 
 ```mermaid
 flowchart LR
-    NetworkClient["Open WebUI u otro cliente MCP"] -->|"Streamable HTTP /mcp"| Tools["21 herramientas FastMCP"]
+    NetworkClient["Open WebUI u otro cliente MCP"] -->|"Streamable HTTP /mcp"| Tools["25 herramientas FastMCP"]
     LocalClient["Cliente MCP local"] -->|"STDIO"| Tools
     Operator["Operador"] -->|"GET /health"| API["FastAPI"]
     Tools --> CS["ConnectionService"]
@@ -44,6 +49,8 @@ flowchart LR
     Tools --> GenExec["GenerationExecutionService"]
     Tools --> Report["ReportingService"]
     Tools --> ObjExp["ObjectExplanationService"]
+    Tools --> DocIndex["DocumentIndexService"]
+    Tools --> DocSearch["DocumentSearchService"]
     Executor --> Validator
     Executor --> CS
     GenExec --> Gen
@@ -57,6 +64,13 @@ flowchart LR
     ObjExp --> Cat
     ObjExp --> LlmFactory
     LlmFactory --> LlmProvider["OpenAiCompatibleProvider"]
+    DocIndex --> EmbFactory["EmbeddingProviderFactory"]
+    DocSearch --> EmbFactory
+    EmbFactory --> EmbProvider["OpenAiCompatibleEmbeddingProvider"]
+    DocIndex --> VectorStore["QdrantVectorStoreRepository"]
+    DocSearch --> VectorStore
+    DocIndex --> DocDB["Documentos / SQLite"]
+    VectorStore --> Qdrant["Qdrant"]
     CS --> Config["Pydantic + connections.yaml"]
     CS --> Factory["AdapterFactory"]
     Factory --> PG["PostgresAdapter"]
@@ -66,22 +80,30 @@ flowchart LR
     Gen --> Audit
     Report --> Audit
     ObjExp --> Audit
+    DocIndex --> Audit
+    DocSearch --> Audit
     Validator --> Policy["Política PostgreSQL / SQLGlot AST"]
     Audit --> AuditDB["Auditoría / SQLite"]
     Scheduler["CatalogScheduler"] --> Cat
+    DocScheduler["DocumentIndexScheduler"] --> DocIndex
     API --> ASGI["ASGI / Uvicorn"]
     Tools --> ASGI
 ```
 
 - `app/config`: carga de YAML y normalización de errores.
 - `app/models`: contratos tipados de conexiones, catálogo, metadata MCP, validación, ejecución,
-  auditoría, generación LLM y reportes.
+  auditoría, generación LLM, reportes y RAG documental.
 - `app/security`: reglas PostgreSQL aplicadas sobre el árbol sintáctico.
-- `app/services`: casos de uso de conexión, catálogo, validación, ejecución, auditoría y generación
-  asistida por LLM.
+- `app/services`: casos de uso de conexión, catálogo, validación, ejecución, auditoría, generación
+  asistida por LLM e indexación/búsqueda de documentos.
 - `app/adapters`: contrato SQL, fábrica por registro y adaptación PostgreSQL.
 - `app/generation`: contrato de proveedor LLM, fábrica por registro, selección de contexto de
   catálogo, construcción de prompts y parseo de la respuesta del modelo.
+- `app/rag`: contrato de proveedor de embeddings (fábrica por registro, independiente del proveedor
+  de generación), ingesta (metadata desde ruta, chunking, parsers por extensión). Ver
+  [rag.md](rag.md).
+- `app/repositories`: además de catálogo/auditoría, contratos e implementaciones de metadata de
+  documentos (SQLite) y vector store (Qdrant).
 - `app/reporting`: resolución determinística de periodos relativos (sin LLM) y exportadores
   CSV/JSON/XLSX/PDF por registro, orquestados por `ReportingService` sobre
   `GenerationExecutionService`.
@@ -161,7 +183,7 @@ el entry point `data-platform-mcp-stdio` llama `mcp.run()` con el transporte STD
 Así ambos transportes comparten nombres, schemas de entrada/salida y versión del servidor.
 
 Los envelopes añadidos en Sprint 4 incluyen `contract_version: "1.0.0"`. El servidor se publica
-como `0.7.0`; un cambio de implementación no obliga a romper el contrato. Las pruebas consultan
+como `0.8.0`; un cambio de implementación no obliga a romper el contrato. Las pruebas consultan
 `list_tools`, fijan los 15 nombres y validan los JSON Schemas de entrada/salida. La política de
 compatibilidad y el catálogo completo están en [mcp-contracts.md](mcp-contracts.md) y
 [mcp-tools.md](mcp-tools.md).
@@ -169,13 +191,17 @@ compatibilidad y el catálogo completo están en [mcp-contracts.md](mcp-contract
 ## Persistencia y despliegue
 
 `catalog.db` guarda metadata técnica; `audit.db` guarda eventos de seguridad append-only con hash
-SHA-256 del texto original. Ambos usan WAL y `busy_timeout` y residen en `/app/data`, montado desde el
-volumen nombrado `catalog-data`; ninguna tabla de auditoría contiene SQL, parámetros o valores.
+SHA-256 del texto original; `documents.db` (Sprint 7) guarda metadata y hash de contenido de los
+documentos indexados. Todas usan WAL y `busy_timeout` y residen en `/app/data`, montado desde el
+volumen nombrado `catalog-data`; ninguna tabla de auditoría contiene SQL, parámetros, valores ni
+texto de documentos. Los vectores de embeddings viven exclusivamente en Qdrant (volumen nombrado
+`qdrant-data`), nunca en SQLite.
 
-MCP y PostgreSQL comparten la red Docker externa `ai-platform`; Open WebUI puede vivir en otro
-Compose y resolver `data-platform-mcp:8000`. Las imágenes fijadas de Python 3.12 y PostgreSQL tienen
-variantes ARM64. Un proceso con SQLite y concurrencia acotada es compatible con una instancia pequeña
-de Oracle Cloud Free Tier; múltiples réplicas requerirían persistencia y coordinación compartidas.
+MCP, PostgreSQL y Qdrant comparten la red Docker externa `ai-platform`; Open WebUI puede vivir en
+otro Compose y resolver `data-platform-mcp:8000`. Las imágenes fijadas de Python 3.12, PostgreSQL y
+Qdrant tienen variantes ARM64. Un proceso con SQLite y concurrencia acotada es compatible con una
+instancia pequeña de Oracle Cloud Free Tier; múltiples réplicas requerirían persistencia y
+coordinación compartidas.
 
 ## Riesgos y límites
 
