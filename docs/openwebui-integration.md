@@ -138,3 +138,7 @@ proveedor LLM real. HU-802 y HU-803 dependen de que **tú** configures un modelo
 tool-calling dentro de Open WebUI (OpenAI, Claude, Ollama u otro proveedor compatible) — el
 servidor MCP en sí sigue sin depender de ningún proveedor concreto, igual que el resto del
 proyecto. Esta guía documenta el runbook exacto; su ejecución y confirmación quedan a tu cargo.
+
+Para probar en el chat las 29 tools una por una, incluida la cobertura específica del esquema
+extendido del laboratorio PostgreSQL (nuevas tablas, procedimientos y triggers), ver
+[openwebui-test-prompts.md](openwebui-test-prompts.md).

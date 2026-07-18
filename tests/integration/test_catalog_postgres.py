@@ -40,11 +40,21 @@ def test_catalog_refresh_search_and_persistence_with_postgres(tmp_path: Path) ->
     snapshot = repository.get_snapshot("postgres-demo")
 
     assert refreshed.outcome is CatalogRefreshOutcome.SUCCESS
-    assert refreshed.tables_count == 3
+    assert refreshed.tables_count == 9
     assert search.matches[0].table == "clientes"
     assert search.matches[0].matched_columns == ("correo",)
     assert tuple(schema.name for schema in schemas.schemas) == ("public",)
-    assert {table.name for table in tables.tables} == {"clientes", "productos", "ventas"}
+    assert {table.name for table in tables.tables} == {
+        "clientes",
+        "productos",
+        "ventas",
+        "categorias",
+        "proveedores",
+        "direcciones_envio",
+        "resenas_productos",
+        "empleados",
+        "historial_salarios",
+    }
     assert description.table.unique_keys[0].columns == ("correo",)
     assert {relationship.target_table for relationship in relationships.relationships} == {
         "clientes",
@@ -60,5 +70,14 @@ def test_catalog_refresh_search_and_persistence_with_postgres(tmp_path: Path) ->
     assert {procedure.name for procedure in snapshot.procedures} >= {
         "actualizar_stock_producto",
         "resumen_ventas_cliente",
+        "producto_mas_vendido",
+        "calificacion_promedio_producto",
+        "clientes_por_ciudad",
+        "valida_stock_venta",
+        "registrar_historial_salario",
     }
-    assert {trigger.name for trigger in snapshot.triggers} == {"trg_ventas_actualiza_stock"}
+    assert {trigger.name for trigger in snapshot.triggers} == {
+        "trg_ventas_actualiza_stock",
+        "trg_ventas_valida_stock",
+        "trg_empleados_historial_salario",
+    }

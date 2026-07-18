@@ -37,7 +37,17 @@ def test_postgres_connection_and_metadata_contract() -> None:
     assert connection_result.success is True
     assert connection_result.error_code is None
     assert "public" in {schema.name for schema in schemas}
-    assert {table.name for table in tables} == {"clientes", "productos", "ventas"}
+    assert {table.name for table in tables} == {
+        "clientes",
+        "productos",
+        "ventas",
+        "categorias",
+        "proveedores",
+        "direcciones_envio",
+        "resenas_productos",
+        "empleados",
+        "historial_salarios",
+    }
     assert tuple(column.name for column in ventas.columns) == (
         "id",
         "cliente_id",
@@ -71,7 +81,15 @@ def test_postgres_lists_demo_procedures_and_triggers() -> None:
     triggers = adapter.list_triggers("public", "ventas")
 
     procedure_names = {procedure.name for procedure in procedures}
-    assert {"actualizar_stock_producto", "resumen_ventas_cliente"} <= procedure_names
+    assert {
+        "actualizar_stock_producto",
+        "resumen_ventas_cliente",
+        "producto_mas_vendido",
+        "calificacion_promedio_producto",
+        "clientes_por_ciudad",
+        "valida_stock_venta",
+        "registrar_historial_salario",
+    } <= procedure_names
     summary = next(p for p in procedures if p.name == "resumen_ventas_cliente")
     assert "p_cliente_id" in summary.arguments
     assert summary.kind == "function"
@@ -83,6 +101,12 @@ def test_postgres_lists_demo_procedures_and_triggers() -> None:
     assert trigger.events == ("INSERT",)
     assert trigger.function_name == "actualizar_stock_producto"
     assert "CREATE TRIGGER" in trigger.definition
+
+    stock_check_trigger = next(t for t in triggers if t.name == "trg_ventas_valida_stock")
+    assert stock_check_trigger.table == "ventas"
+    assert stock_check_trigger.timing == "BEFORE"
+    assert stock_check_trigger.events == ("INSERT",)
+    assert stock_check_trigger.function_name == "valida_stock_venta"
 
 
 def test_postgres_lab_role_cannot_write() -> None:
