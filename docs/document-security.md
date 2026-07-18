@@ -35,6 +35,12 @@ Bloqueados explícitamente (con razón nombrada, no genérica): `$out`, `$merge`
 `$accumulator`, `$where` (JavaScript del lado del servidor), `$currentOp`, `$collStats`,
 `$indexStats`, `$planCacheStats`, `$eval`.
 
+**Sub-pipelines anidados** (`$lookup.pipeline` y cada campo de salida de `$facet`, sintaxis
+estándar de MongoDB): se validan con exactamente la misma lógica que el pipeline de nivel
+superior — cada etapa anidada se revisa contra la misma allowlist de etapas, recursivamente,
+respetando el mismo límite de anidamiento máximo. Un `$out`/`$merge` dentro de un sub-pipeline de
+`$lookup` o `$facet` queda tan bloqueado como si estuviera en el nivel superior.
+
 Razones estructuradas:
 
 | Código | Condición |
