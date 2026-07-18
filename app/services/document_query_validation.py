@@ -43,8 +43,40 @@ class DocumentQueryValidationService:
         """Validate an aggregation pipeline without executing it."""
         issues: list[ValidationIssue] = []
         self._validate_collection_name(collection, issues)
-        for stage in pipeline:
-            if len(stage) != 1:
+        self._walk_pipeline(pipeline, 0, issues)
+        return self._result(DocumentOperationType.AGGREGATE, collection, issues)
+
+    def _walk_pipeline(
+        self,
+        stages: object,
+        depth: int,
+        issues: list[ValidationIssue],
+    ) -> None:
+        """Validate a list of stage dicts: the top-level pipeline or a nested sub-pipeline.
+
+        `$lookup.pipeline` and each `$facet` output field hold their own nested list of
+        stages (standard, documented MongoDB syntax) — these are structurally stage lists,
+        never operator expressions, so they must be validated the same way as the top-level
+        pipeline instead of falling through to `_walk`, which only recognizes operators.
+        """
+        if depth > _MAX_NESTING_DEPTH:
+            issues.append(
+                ValidationIssue(
+                    code="NESTING_TOO_DEEP",
+                    message=f"El payload excede la profundidad máxima de {_MAX_NESTING_DEPTH}.",
+                )
+            )
+            return
+        if not isinstance(stages, list):
+            issues.append(
+                ValidationIssue(
+                    code="STAGE_SHAPE_INVALID",
+                    message="Un sub-pipeline debe ser una lista de etapas.",
+                )
+            )
+            return
+        for stage in stages:
+            if not isinstance(stage, dict) or len(stage) != 1:
                 issues.append(
                     ValidationIssue(
                         code="STAGE_SHAPE_INVALID",
@@ -69,8 +101,28 @@ class DocumentQueryValidationService:
                         )
                     )
                 continue
-            self._walk(stage[stage_name], 0, issues)
-        return self._result(DocumentOperationType.AGGREGATE, collection, issues)
+            self._walk_stage_argument(stage_name, stage[stage_name], depth, issues)
+
+    def _walk_stage_argument(
+        self,
+        stage_name: str,
+        argument: JsonValue,
+        depth: int,
+        issues: list[ValidationIssue],
+    ) -> None:
+        """Dispatch a stage's own argument, recursing into any nested sub-pipeline."""
+        if stage_name == "$lookup" and isinstance(argument, dict):
+            for key, nested in argument.items():
+                if key == "pipeline":
+                    self._walk_pipeline(nested, depth + 1, issues)
+                else:
+                    self._walk(nested, depth + 1, issues)
+            return
+        if stage_name == "$facet" and isinstance(argument, dict):
+            for nested in argument.values():
+                self._walk_pipeline(nested, depth + 1, issues)
+            return
+        self._walk(argument, depth + 1, issues)
 
     def _walk(self, value: JsonValue, depth: int, issues: list[ValidationIssue]) -> None:
         """Recurse dict/list values, flagging any '$'-prefixed key not on the allowlist."""

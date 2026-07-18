@@ -43,6 +43,81 @@ def test_valid_aggregate_pipeline_is_executable() -> None:
     assert result.operation is DocumentOperationType.AGGREGATE
 
 
+def test_lookup_with_subpipeline_is_executable() -> None:
+    service = DocumentQueryValidationService()
+
+    result = service.validate_aggregate(
+        "ventas",
+        [
+            {
+                "$lookup": {
+                    "from": "productos",
+                    "let": {"producto_id": "$producto_id"},
+                    "pipeline": [
+                        {"$match": {"$expr": {"$eq": ["$_id", "$$producto_id"]}}},
+                        {"$project": {"nombre": 1}},
+                    ],
+                    "as": "producto",
+                }
+            },
+        ],
+    )
+
+    assert result.executable is True
+    assert result.blocked_reasons == ()
+
+
+def test_lookup_subpipeline_still_blocks_disallowed_stage() -> None:
+    service = DocumentQueryValidationService()
+
+    result = service.validate_aggregate(
+        "ventas",
+        [
+            {
+                "$lookup": {
+                    "from": "productos",
+                    "pipeline": [{"$out": "otra_coleccion"}],
+                    "as": "producto",
+                }
+            },
+        ],
+    )
+
+    assert result.executable is False
+    assert "STAGE_NOT_ALLOWED" in _codes(result)
+
+
+def test_facet_with_subpipelines_is_executable() -> None:
+    service = DocumentQueryValidationService()
+
+    result = service.validate_aggregate(
+        "ventas",
+        [
+            {
+                "$facet": {
+                    "por_cliente": [{"$group": {"_id": "$cliente_id", "total": {"$sum": 1}}}],
+                    "por_producto": [{"$group": {"_id": "$producto_id", "total": {"$sum": 1}}}],
+                }
+            },
+        ],
+    )
+
+    assert result.executable is True
+    assert result.blocked_reasons == ()
+
+
+def test_facet_subpipeline_still_blocks_disallowed_stage() -> None:
+    service = DocumentQueryValidationService()
+
+    result = service.validate_aggregate(
+        "ventas",
+        [{"$facet": {"riesgo": [{"$merge": {"into": "otra_coleccion"}}]}}],
+    )
+
+    assert result.executable is False
+    assert "STAGE_NOT_ALLOWED" in _codes(result)
+
+
 def test_out_stage_is_blocked_explicitly() -> None:
     service = DocumentQueryValidationService()
 
