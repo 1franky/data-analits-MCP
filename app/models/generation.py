@@ -13,6 +13,7 @@ class LlmProviderType(StrEnum):
     """Known LLM provider implementations."""
 
     OPENAI_COMPATIBLE = "openai_compatible"
+    ANTHROPIC = "anthropic"
 
 
 class GenerationProviderConfig(BaseModel):
