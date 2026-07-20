@@ -48,6 +48,26 @@ connections:
     options:
       authSource: demo
 
+  # YugabyteDB YSQL es compatible con el protocolo de PostgreSQL, por eso usa type: postgres.
+  # El host "yugabyte-lab" es el container_name del servicio definido en ../yugabyte/compose.yaml,
+  # que debe estar unido a esta misma red externa "ai-platform" para ser alcanzable.
+  - id: yugabyte-hub-domi
+    name: YugabyteDB Hub Domiciliacion
+    type: postgres
+    host: yugabyte-lab
+    port: 5433
+    database: hub_domiciliacion
+    username: mcp_readonly
+    password_env: YUGABYTE_DEMO_PASSWORD
+    readonly: true
+    enabled: true
+    connect_timeout_seconds: 10
+    query_timeout_seconds: 30
+    max_rows: 500
+    options:
+      application_name: data-platform-mcp
+      sslmode: disable
+
 catalog:
   enabled: true
   refresh_interval_minutes: 60

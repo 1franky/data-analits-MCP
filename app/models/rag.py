@@ -50,6 +50,7 @@ class RagConfig(BaseModel):
     allowed_extensions: tuple[str, ...] = (".md", ".txt", ".sql", ".json", ".yaml", ".yml")
     chunk_size: Annotated[int, Field(ge=100, le=20_000)] = 1_000
     chunk_overlap: Annotated[int, Field(ge=0, le=5_000)] = 150
+    markdown_structure_aware_chunking: bool = False
     max_document_bytes: Annotated[int, Field(ge=1_024, le=50_000_000)] = 5_000_000
     refresh_interval_minutes: Annotated[int, Field(ge=1, le=10_080)] = 60
     refresh_on_startup: bool = True

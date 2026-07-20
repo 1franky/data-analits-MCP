@@ -29,7 +29,7 @@ from app.models.rag import (
     RefreshDocumentIndexResult,
 )
 from app.rag.embeddings.registry import EmbeddingProviderFactory
-from app.rag.ingestion.chunking import chunk_text
+from app.rag.ingestion.chunking import chunk_markdown_by_structure, chunk_text
 from app.rag.ingestion.parsers.factory import create_document_parser_factory
 from app.rag.ingestion.parsers.registry import DocumentParserFactory
 from app.rag.ingestion.path_metadata import PathDerivedMetadata, derive_metadata_from_path
@@ -219,7 +219,12 @@ class DocumentIndexService:
             indexed_at=self._clock(),
         )
 
-        text_chunks = chunk_text(text, self._config.chunk_size, self._config.chunk_overlap)
+        if self._config.markdown_structure_aware_chunking and extension == ".md":
+            text_chunks = chunk_markdown_by_structure(
+                text, self._config.chunk_size, self._config.chunk_overlap
+            )
+        else:
+            text_chunks = chunk_text(text, self._config.chunk_size, self._config.chunk_overlap)
         document_chunks = tuple(
             DocumentChunk(
                 chunk_id=f"{document_id}:{position}",
