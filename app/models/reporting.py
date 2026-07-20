@@ -17,6 +17,7 @@ class ReportFormat(StrEnum):
     PDF = "pdf"
     CSV = "csv"
     JSON = "json"
+    HTML = "html"
 
 
 class ReportPeriodKeyword(StrEnum):
@@ -63,6 +64,7 @@ class ReportingConfig(BaseModel):
         ReportFormat.JSON,
         ReportFormat.XLSX,
         ReportFormat.PDF,
+        ReportFormat.HTML,
     )
 
 

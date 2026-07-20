@@ -11,6 +11,7 @@ from openpyxl import load_workbook
 from app.models.query import SerializedValue
 from app.reporting.exporters.base import ReportData, ReportExporter
 from app.reporting.exporters.csv_exporter import CsvReportExporter
+from app.reporting.exporters.html_exporter import HtmlReportExporter
 from app.reporting.exporters.json_exporter import JsonReportExporter
 from app.reporting.exporters.pdf_exporter import PdfReportExporter
 from app.reporting.exporters.xlsx_exporter import XlsxReportExporter
@@ -35,7 +36,13 @@ EMPTY = _report_data(())
 
 @pytest.mark.parametrize(
     "exporter",
-    [CsvReportExporter(), JsonReportExporter(), XlsxReportExporter(), PdfReportExporter()],
+    [
+        CsvReportExporter(),
+        JsonReportExporter(),
+        XlsxReportExporter(),
+        PdfReportExporter(),
+        HtmlReportExporter(),
+    ],
 )
 def test_exporters_produce_nonempty_bytes_for_rows_and_empty_data(
     exporter: ReportExporter,
@@ -92,3 +99,25 @@ def test_pdf_exporter_starts_with_pdf_signature() -> None:
     assert PdfReportExporter().export(WITH_ROWS).startswith(b"%PDF")
     assert PdfReportExporter().export(EMPTY).startswith(b"%PDF")
     assert PdfReportExporter().content_type == "application/pdf"
+
+
+def test_html_exporter_escapes_and_contains_data() -> None:
+    data = _report_data(((1, "A & B <C>"),))
+
+    raw = HtmlReportExporter().export(data).decode("utf-8")
+
+    assert "A & B <C>" not in raw
+    assert "A &amp; B &lt;C&gt;" in raw
+    assert "<h1>Reporte: ventas del mes pasado</h1>" in raw
+    assert "<th>id</th>" in raw
+    assert "<th>nombre</th>" in raw
+    assert "1 de junio de 2026 al 30 de junio de 2026" in raw
+    assert HtmlReportExporter().content_type == "text/html; charset=utf-8"
+    assert HtmlReportExporter().file_extension == "html"
+
+
+def test_html_exporter_handles_empty_rows() -> None:
+    raw = HtmlReportExporter().export(EMPTY).decode("utf-8")
+
+    assert "Sin resultados" in raw
+    assert '<td colspan="2">Sin resultados</td>' in raw

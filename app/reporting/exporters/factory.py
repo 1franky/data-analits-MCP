@@ -2,6 +2,7 @@
 
 from app.models.reporting import ReportFormat
 from app.reporting.exporters.csv_exporter import CsvReportExporter
+from app.reporting.exporters.html_exporter import HtmlReportExporter
 from app.reporting.exporters.json_exporter import JsonReportExporter
 from app.reporting.exporters.pdf_exporter import PdfReportExporter
 from app.reporting.exporters.registry import ReportExporterFactory
@@ -15,4 +16,5 @@ def create_report_exporter_factory() -> ReportExporterFactory:
     factory.register(ReportFormat.JSON, JsonReportExporter)
     factory.register(ReportFormat.XLSX, XlsxReportExporter)
     factory.register(ReportFormat.PDF, PdfReportExporter)
+    factory.register(ReportFormat.HTML, HtmlReportExporter)
     return factory
